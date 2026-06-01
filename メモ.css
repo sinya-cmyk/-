@@ -1,0 +1,136 @@
+/*修正1回目*/
+/*.gmail-detail-panel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}*/
+
+/* Gmail詳細パネルをモーダルウィンドウ化 修正2回目*/
+/*.gmail-detail-panel {
+  /* ★ 画面最前面に固定して浮かせる設定 */
+  /*position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* 画面の完全に中央に配置 */
+  /*z-index: 2000; /* カレンダーや一覧より確実に前面へ */
+  
+  /* ★ ウィンドウのサイズと見た目の調整 */
+  /*width: min(800px, 95vw); /* 最大幅800px、スマホなら画面幅の95% */
+  /*max-height: 85vh; /* 画面からはみ出さないように制限 */
+  /*display: flex;
+  flex-direction: column; /* ヘッダーと本文を縦に並べる */
+  
+  /*background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 24px; /* タスクモーダルと統一感を持たせる */
+  /*padding: 24px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25); /* 深めの影をつけて立体感を出す */
+/*}*/
+
+/* メール本文エリアのスクロール対応 */
+/*.gmail-detail-body {
+  margin: 16px 0 0;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  
+  /* ★ ウィンドウ内で本文だけをスクロールさせる */
+  /*flex: 1;
+  overflow-y: auto; 
+  max-height: 50vh; /* ウィンドウの大きさに合わせて適切に調整 */
+  /*color: #334155;
+/*}*/
+
+/*修正3回目*/
+/*.gmail-detail-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+  
+  width: min(800px, 95vw);
+  
+  /* ★【重要】モーダル自体の最大高さを画面の80%に固定 */
+  /*max-height: 80vh; 
+  
+  /* ★【重要】中身がはみ出た場合に、モーダル全体を縦スクロール可能にする */
+  /*overflow-y: auto; 
+  
+  /* ★ 縦並びのレイアウトを保証 */
+  /*display: flex;
+  flex-direction: column;
+  
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+}
+
+/* メール本文が入るブロックの調整 */
+/*.gmail-detail-body {
+  margin: 16px 0 0;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #334155;
+  
+  /* ★【重要】本文エリア自体も単体でスクロールできるようにする */
+  /*flex: 1;
+  overflow-y: auto;
+  min-height: 200px; /* 最低限の本文エリアを確保 */
+/*}*/
+
+/*修正4回目*/
+/*.gmail-detail-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+  
+  width: min(800px, 95vw);
+  
+  /* ★【超重要】画面の高さを基準に制限をかけ、絶対にこれ以上大きくしない */
+  /*height: 80vh; 
+  max-height: 80vh; 
+
+  /* ★【超重要】中身を縦に綺麗に並べ、はみ出た分をコントロールする */
+  /*display: flex;
+  flex-direction: column;
+  overflow: hidden; /* モーダル自体の枠からはみ出るのを強制カット */
+  
+  /*background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  box-sizing: border-box; /* パディングを含めたサイズ計算にする */
+/*}*/
+
+/* メール本文エリア（ここだけを絶対にスクロールさせる） */
+/*.gmail-detail-body {
+  margin: 16px 0 0;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #334155;
+  
+  /* ★【超重要】Flexboxの中で、残りの高さをすべてこの本文エリアに割り当てる */
+  /*flex: 1 1 auto; 
+  
+  /* ★【超重要】本文がこのエリアをはみ出したら、ここだけにスクロールバーを出す */
+  /*overflow-y: auto; 
+/*}*/

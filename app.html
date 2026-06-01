@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タスク管理</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="header-title">
+        <div>
+          <h1>タスク管理システム</h1>
+          <p>タスク登録、カレンダー、プロジェクト管理、Gmail を利用できます。</p>
+        </div>
+        <div class="user-state hidden" id="userState">
+          <span id="currentUserName"></span>
+          <button id="logoutButton" type="button" class="logout-button">ログアウト</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="appContent">
+      <section class="project-panel">
+        <div class="panel-header">
+          <h2>プロジェクト一覧</h2>
+        </div>
+        <ul class="project-list" id="projectList"></ul>
+        <div class="project-form">
+          <label>
+            新規プロジェクト名
+            <input id="newProjectName" type="text" placeholder="新しいプロジェクト名を入力">
+          </label>
+          <button id="createProjectButton" type="button" class="full-width">＋ プロジェクトを作成</button>
+        </div>
+      </section>
+
+      <section class="calendar-panel">
+        <div class="calendar-header">
+          <button id="prevMonth" type="button">前</button>
+          <div>
+            <h2 id="monthLabel"></h2>
+            <p id="yearLabel"></p>
+          </div>
+          <div class="calendar-actions">
+            <button id="showTodoListViewButton" type="button" class="secondary-button">TO DOリストへ</button>
+            <button id="nextMonth" type="button">次</button>
+          </div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </section>
+
+      <section class="task-panel">
+        <div class="task-header">
+          <div>
+            <h2 id="selectedDateLabel"></h2>
+            <p>選択した日のタスク</p>
+          </div>
+          <div class="task-header-actions">
+            <button id="showTaskRegisterButton" type="button" class="secondary-button">新規タスク追加</button>
+            <button id="showCalendarViewButton" type="button" class="secondary-button">カレンダー表示</button>
+            <button id="showAttachmentsPageButton" type="button" class="secondary-button">資料一覧</button>
+            <button id="showLogsPageButton" type="button" class="secondary-button">ログを見る</button>
+            <button id="backToModeButton" type="button" class="secondary-button">モード選択に戻る</button>
+            <button id="showGmailViewButton" type="button" class="secondary-button">Gmailを見る</button>
+          </div>
+        </div>
+
+        <div id="taskEntryPanel" class="task-modal-overlay hidden">
+          <div class="task-modal">
+            <div class="task-modal-header">
+              <div>
+                <h2>新規タスクの追加</h2>
+                <p class="task-modal-subtitle">日付・開始時刻・終了時刻・プロジェクト・タイトル・詳細を入力してください。</p>
+              </div>
+              <button id="cancelTaskButton" type="button" class="modal-close-button">✕</button>
+            </div>
+            <div class="task-form grid">
+              <div class="form-row">
+                <label>
+                  日付
+                  <input id="taskDateInput" type="date">
+                </label>
+                <label>
+                  開始時刻
+                  <input id="taskStartInput" type="time">
+                </label>
+                <label>
+                  終了時刻
+                  <input id="taskEndInput" type="time">
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  プロジェクト
+                  <select id="taskProjectSelect"></select>
+                </label>
+                <label>
+                  優先度
+                  <select id="taskPrioritySelect">
+                    <option value="low">低</option>
+                    <option value="normal" selected>通常</option>
+                    <option value="high">高</option>
+                    <option value="urgent">緊急</option>
+                  </select>
+                </label>
+              </div>
+              <label class="full-width">
+                添付資料
+                <input id="taskAttachmentInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple>
+              </label>
+              <div id="taskAttachmentList" class="attachment-list"></div>
+              <div class="form-row">
+                <label class="full-width">
+                  タイトル
+                  <input id="taskTitleInput" type="text" placeholder="タイトルを入力" maxlength="120">
+                </label>
+              </div>
+              <label class="wide">
+                詳細
+                <textarea id="taskDetailInput" placeholder="詳細を入力" rows="3"></textarea>
+              </label>
+              <button id="addTaskButton" type="button" class="full-width">追加</button>
+            </div>
+          </div>
+        </div>
+
+        <ul class="task-list" id="taskList"></ul>
+      </section>
+
+      <section id="gmailPanel" class="gmail-panel hidden">
+        <div class="gmail-header">
+          <div>
+            <h2>Gmail メール閲覧</h2>
+            <p id="gmailStatus">Gmail 連携を行ってメールを表示します。</p>
+          </div>
+          <div class="gmail-actions">
+            <button id="gmailAuthorizeButton" type="button" class="secondary-button">Gmailに接続</button>
+            <button id="gmailRefreshButton" type="button" class="secondary-button">更新</button>
+            <button id="backToTasksButton" type="button" class="secondary-button">タスクに戻る</button>
+          </div>
+        </div>
+        <div id="gmailDetailPanel" class="gmail-detail-panel hidden">
+          <div class="gmail-detail-header">
+            <div>
+              <h3 id="gmailDetailSubject">件名</h3>
+              <p id="gmailDetailFrom"></p>
+              <small id="gmailDetailDate"></small>
+            </div>
+            <button id="gmailDetailCloseButton" type="button" class="secondary-button">閉じる</button>
+          </div>
+          <div id="gmailDetailHeaders" class="gmail-detail-headers"></div>
+          <pre id="gmailDetailBody" class="gmail-detail-body"></pre>
+        </div>
+        <div class="gmail-list" id="gmailList"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>資料一覧</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell" id="attachmentsPage">
+    <header>
+      <div class="header-title">
+        <div>
+          <h1>添付資料一覧</h1>
+          <p>登録済みのタスク添付資料を日付・プロジェクト・タスクタイトルとともに表示します。</p>
+        </div>
+        <div class="user-state hidden" id="userState">
+          <span id="currentUserName"></span>
+          <button id="logoutButton" type="button" class="logout-button">ログアウト</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="attachments-main">
+      <div class="attachments-header">
+        <button id="backToAppButton" type="button" class="secondary-button">アプリに戻る</button>
+      </div>
+
+      <section class="attachments-summary">
+        <p id="attachmentsMessage">読み込み中...</p>
+      </section>
+
+      <ul class="attachments-list" id="attachmentsList"></ul>
+    </main>
+  </div>
+
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

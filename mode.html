@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>モード選択</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="header-title">
+        <div>
+          <h1>タスク管理システム</h1>
+          <p>モードを選択してタスク管理画面に進みます。</p>
+        </div>
+        <div class="user-state hidden" id="userState">
+          <span id="currentUserName"></span>
+          <button id="logoutButton" type="button" class="logout-button">ログアウト</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="modePanel" class="mode-panel">
+      <div class="mode-card">
+        <h2>モードを選択してください</h2>
+        <p class="mode-description">個人用タスクと業務用タスクを切り替えて管理できます。</p>
+        <div class="mode-buttons">
+          <button id="privateModeButton" type="button" class="mode-button">プライベートモード</button>
+          <button id="businessModeButton" type="button" class="mode-button secondary-button">業務モード</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

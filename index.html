@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タスク管理システム</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="header-title">
+        <div>
+          <h1>タスク管理システム</h1>
+          <p>日付を選択してタスクを追加・管理できます。</p>
+        </div>
+        <div class="user-state hidden" id="userState">
+          <span id="currentUserName"></span>
+          <button id="logoutButton" type="button" class="logout-button">ログアウト</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="authPanel" class="auth-panel">
+      <div class="auth-card">
+        <h2>ログイン / アカウント作成</h2>
+        <p id="authMessage" class="auth-message">アカウントを作成するか、既存アカウントでログインしてください。</p>
+
+        <form id="loginForm" class="auth-form">
+          <label>
+            ユーザー名
+            <input id="loginUsername" type="text" placeholder="ユーザー名を入力" autocomplete="username">
+          </label>
+          <label>
+            パスワード
+            <input id="loginPassword" type="password" placeholder="パスワードを入力" autocomplete="current-password">
+          </label>
+          <button id="loginButton" type="button">ログイン</button>
+          <p class="auth-footer">
+            アカウントがありませんか？
+            <button id="showRegisterButton" type="button" class="toggle-link">アカウント作成</button>
+          </p>
+        </form>
+
+        <form id="registerForm" class="auth-form hidden">
+          <label>
+            ユーザー名
+            <input id="registerUsername" type="text" placeholder="ユーザー名を入力" autocomplete="username">
+          </label>
+          <label>
+            パスワード
+            <input id="registerPassword" type="password" placeholder="パスワードを入力" autocomplete="new-password">
+          </label>
+          <label>
+            パスワード確認
+            <input id="registerConfirmPassword" type="password" placeholder="パスワードを再入力" autocomplete="new-password">
+          </label>
+          <button id="registerButton" type="button">アカウント作成</button>
+          <p class="auth-footer">
+            すでにアカウントがありますか？
+            <button id="showLoginButton" type="button" class="toggle-link">ログイン</button>
+          </p>
+        </form>
+      </div>
+    </section>
+
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
