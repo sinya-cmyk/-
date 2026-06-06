@@ -82,6 +82,7 @@
       const start = task.startTime || '';
       const end = task.endTime || '';
       const when = formatSchedule(date, start, end);
+      const device = formatDevice(entry.payload?.device);
       const message = buildMessage(action, title, when, task, entry);
       const actionLabel = {
         add: '予定を追加',
@@ -93,6 +94,7 @@
           <div class="entry-body">
             <p class="entry-title">${escapeHtml(actionLabel)}</p>
             <p class="entry-text">${escapeHtml(message)}</p>
+            <p class="entry-meta">${escapeHtml(user)} / ${escapeHtml(device)}</p>
           </div>
           <div class="entry-time">${escapeHtml(timestamp)}</div>
         </div>
@@ -129,6 +131,11 @@
       const date = new Date(value);
       if(Number.isNaN(date.getTime())) return value;
       return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}:${String(date.getSeconds()).padStart(2,'0')}`;
+    }
+
+    function formatDevice(device){
+      if(!device) return '端末情報なし';
+      return device;
     }
 
     function escapeHtml(text){

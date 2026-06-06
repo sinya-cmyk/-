@@ -30,6 +30,14 @@ const taskEndInput = document.getElementById("taskEndInput");
 const taskProjectSelect = document.getElementById("taskProjectSelect");
 const taskPrioritySelect = document.getElementById("taskPrioritySelect");
 const taskTitleInput = document.getElementById("taskTitleInput");
+const startVoiceInputButton = document.getElementById("startVoiceInputButton");
+const voiceInputStatus = document.getElementById("voiceInputStatus");
+const startVoiceDateInputButton = document.getElementById("startVoiceDateInputButton");
+const voiceDateInputStatus = document.getElementById("voiceDateInputStatus");
+const startVoiceStartTimeInputButton = document.getElementById("startVoiceStartTimeInputButton");
+const voiceStartTimeInputStatus = document.getElementById("voiceStartTimeInputStatus");
+const startVoiceEndTimeInputButton = document.getElementById("startVoiceEndTimeInputButton");
+const voiceEndTimeInputStatus = document.getElementById("voiceEndTimeInputStatus");
 const taskDetailInput = document.getElementById("taskDetailInput");
 const taskAttachmentInput = document.getElementById("taskAttachmentInput");
 const taskAttachmentList = document.getElementById("taskAttachmentList");
@@ -57,6 +65,7 @@ const gmailDetailFrom = document.getElementById("gmailDetailFrom");
 const gmailDetailDate = document.getElementById("gmailDetailDate");
 const gmailDetailHeaders = document.getElementById("gmailDetailHeaders");
 const gmailDetailBody = document.getElementById("gmailDetailBody");
+const gmailCreateTaskButton = document.getElementById("gmailCreateTaskButton");
 const gmailDetailCloseButton = document.getElementById("gmailDetailCloseButton");
 const backToTasksButton = document.getElementById("backToTasksButton");
 const backToModeButton = document.getElementById("backToModeButton");
@@ -106,8 +115,56 @@ function getCurrentPage() {
   return fileName || "index.html";
 }
 
-function saveUsers(users) {
+async function fetchJson(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function saveUsersLocal(users) {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+async function saveUsers(users) {
+  saveUsersLocal(users);
+  try {
+    await fetchJson('/api/users', { method: 'POST', body: JSON.stringify({ users }) });
+  } catch (error) {
+    console.warn('ユーザー情報のDB保存に失敗しました', error);
+  }
+}
+
+async function fetchUserFromServer(username) {
+  try {
+    const result = await fetchJson(`/api/users?username=${encodeURIComponent(username)}`);
+    if (result.user) {
+      const users = getUsers();
+      users[username] = result.user;
+      saveUsersLocal(users);
+      return result.user;
+    }
+  } catch (error) {
+    console.warn('ユーザー取得に失敗しました', error);
+  }
+  return null;
+}
+
+async function loadUsersFromServer() {
+  try {
+    const result = await fetchJson('/api/users');
+    if (result.users) {
+      saveUsersLocal(result.users);
+      return result.users;
+    }
+  } catch (error) {
+    console.warn('ユーザー同期に失敗しました', error);
+  }
+  return getUsers();
 }
 
 function getSession() {
@@ -131,6 +188,33 @@ function saveTaskData(data) {
   localStorage.setItem(TASKS_KEY, JSON.stringify(data));
 }
 
+async function syncTasksToServer(tasks) {
+  if (!currentUser || !currentMode) return;
+  try {
+    await fetchJson('/api/tasks', {
+      method: 'POST',
+      body: JSON.stringify({ user: currentUser, mode: currentMode, tasks }),
+    });
+  } catch (error) {
+    console.warn('タスクのDB保存に失敗しました', error);
+  }
+}
+
+async function loadTasksFromServer(user, mode) {
+  try {
+    const result = await fetchJson(`/api/tasks?user=${encodeURIComponent(user)}&mode=${encodeURIComponent(mode)}`);
+    if (result.tasks) {
+      const allTasks = getTaskData();
+      allTasks[`${user}_${mode}`] = result.tasks;
+      saveTaskData(allTasks);
+      return result.tasks;
+    }
+  } catch (error) {
+    console.warn('タスク取得に失敗しました', error);
+  }
+  return getTaskData()[`${user}_${mode}`] || {};
+}
+
 function getProjectData() {
   const raw = localStorage.getItem(PROJECTS_KEY);
   return raw ? JSON.parse(raw) : {};
@@ -140,12 +224,41 @@ function saveProjectData(data) {
   localStorage.setItem(PROJECTS_KEY, JSON.stringify(data));
 }
 
+async function syncProjectsToServer(projects) {
+  if (!currentUser) return;
+  try {
+    await fetchJson('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify({ user: currentUser, projects }),
+    });
+  } catch (error) {
+    console.warn('プロジェクトのDB保存に失敗しました', error);
+  }
+}
+
+async function loadProjectsFromServer(user) {
+  if (!user) return [];
+  try {
+    const result = await fetchJson(`/api/projects?user=${encodeURIComponent(user)}`);
+    if (Array.isArray(result.projects)) {
+      const allProjects = getProjectData();
+      allProjects[user] = result.projects;
+      saveProjectData(allProjects);
+      return result.projects;
+    }
+  } catch (error) {
+    console.warn('プロジェクト取得に失敗しました', error);
+  }
+  return getProjectData()[user] || [];
+}
+
 function getProjects() {
   if (!currentUser) return [];
   const allProjects = getProjectData();
   if (!allProjects[currentUser]) {
     allProjects[currentUser] = ["個人", "業務", "研究", "その他"];
     saveProjectData(allProjects);
+    syncProjectsToServer(allProjects[currentUser]).catch(() => {});
   }
   return allProjects[currentUser];
 }
@@ -155,6 +268,7 @@ function saveProjects(projects) {
   const allProjects = getProjectData();
   allProjects[currentUser] = projects;
   saveProjectData(allProjects);
+  syncProjectsToServer(projects).catch(() => {});
 }
 
 function getTasks() {
@@ -170,6 +284,7 @@ function saveTasks(tasks) {
   const userKey = `${currentUser}_${currentMode}`;
   allTasks[userKey] = tasks;
   saveTaskData(allTasks);
+  syncTasksToServer(tasks).catch(() => {});
 }
 
 function appendLocalLog(entry) {
@@ -184,12 +299,17 @@ function appendLocalLog(entry) {
 }
 
 async function logTaskEvent(action, payload) {
+  const logPayload = {
+    ...payload,
+    device: getDeviceLabel(),
+  };
+
   const entry = {
     timestamp: new Date().toISOString(),
     user: currentUser,
     mode: currentMode,
     action,
-    payload,
+    payload: logPayload,
   };
 
   // まずサーバへ送る（失敗したら localStorage に保存）
@@ -206,7 +326,16 @@ async function logTaskEvent(action, payload) {
 }
 
 function formatDateKey(date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDeviceLabel() {
+  const platform = navigator.platform || "不明なプラットフォーム";
+  const userAgent = navigator.userAgent || "不明なユーザーエージェント";
+  return `${platform} / ${userAgent}`;
 }
 
 function showMessage(message, type = "info") {
@@ -342,6 +471,23 @@ function showTaskRegistrationView() {
   if (taskPrioritySelect) taskPrioritySelect.value = "normal";
   if (taskAttachmentInput) taskAttachmentInput.value = "";
   if (taskAttachmentList) taskAttachmentList.innerHTML = "";
+  if (voiceInputStatus) voiceInputStatus.textContent = "";
+  if (startVoiceInputButton) {
+    startVoiceInputButton.textContent = "🎙 音声入力";
+    startVoiceInputButton.disabled = false;
+  }
+  if (voiceDateInputStatus) voiceDateInputStatus.textContent = "";
+  if (startVoiceDateInputButton) {
+    startVoiceDateInputButton.disabled = false;
+  }
+  if (voiceStartTimeInputStatus) voiceStartTimeInputStatus.textContent = "";
+  if (startVoiceStartTimeInputButton) {
+    startVoiceStartTimeInputButton.disabled = false;
+  }
+  if (voiceEndTimeInputStatus) voiceEndTimeInputStatus.textContent = "";
+  if (startVoiceEndTimeInputButton) {
+    startVoiceEndTimeInputButton.disabled = false;
+  }
   renderProjectList();
 }
 
@@ -356,6 +502,23 @@ function hideTaskRegistrationView() {
   if (addTaskButton) addTaskButton.textContent = "追加";
   if (taskAttachmentInput) taskAttachmentInput.value = "";
   if (taskAttachmentList) taskAttachmentList.innerHTML = "";
+  if (voiceInputStatus) voiceInputStatus.textContent = "";
+  if (startVoiceInputButton) {
+    startVoiceInputButton.textContent = "🎙 音声入力";
+    startVoiceInputButton.disabled = false;
+  }
+  if (voiceDateInputStatus) voiceDateInputStatus.textContent = "";
+  if (startVoiceDateInputButton) {
+    startVoiceDateInputButton.disabled = false;
+  }
+  if (voiceStartTimeInputStatus) voiceStartTimeInputStatus.textContent = "";
+  if (startVoiceStartTimeInputButton) {
+    startVoiceStartTimeInputButton.disabled = false;
+  }
+  if (voiceEndTimeInputStatus) voiceEndTimeInputStatus.textContent = "";
+  if (startVoiceEndTimeInputButton) {
+    startVoiceEndTimeInputButton.disabled = false;
+  }
 }
 
 function renderProjectList() {
@@ -603,6 +766,69 @@ function getMessageBody(payload) {
   return "";
 }
 
+function parseEmailToTask(message) {
+  const titleSource = message.subject || "Gmailからのタスク";
+  const rawBody = message.bodyText || message.snippet || "";
+  const firstLine = rawBody.split(/\r?\n/).find((line) => line.trim());
+  const title = titleSource || (firstLine ? firstLine.trim().slice(0, 60) : "Gmailからのタスク");
+
+  const projectKeywords = {
+    業務: /請求|見積|納品|契約|業務|会議|打ち合わせ|請求書|納期|期限/,
+    個人: /買い物|予約|申込|支払い|郵便|イベント|チケット|プライベート/,
+  };
+  let project = "個人";
+  if (projectKeywords.業務.test(titleSource) || projectKeywords.業務.test(rawBody)) project = "業務";
+
+  const parsedDate = new Date(message.date);
+  const dateKey = !isNaN(parsedDate) ? formatDateKey(parsedDate) : formatDateKey(new Date());
+  const startTime = !isNaN(parsedDate)
+    ? parsedDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
+    : "";
+
+  return {
+    title,
+    details: rawBody,
+    project,
+    priority: "normal",
+    startTime,
+    endTime: "",
+    dateKey,
+  };
+}
+
+function createTaskFromEmail() {
+  if (!currentGmailDetailMessageId) {
+    updateGmailStatus("現在のメールが選択されていません。", "error");
+    return;
+  }
+
+  const message = gmailMessageCache[currentGmailDetailMessageId];
+  if (!message) {
+    updateGmailStatus("メール情報を取得できませんでした。", "error");
+    return;
+  }
+
+  const newTask = parseEmailToTask(message);
+  const tasks = getTasks();
+  if (!tasks[newTask.dateKey]) tasks[newTask.dateKey] = [];
+  tasks[newTask.dateKey].push({
+    title: newTask.title,
+    details: newTask.details,
+    startTime: newTask.startTime,
+    endTime: newTask.endTime,
+    project: newTask.project,
+    priority: newTask.priority,
+    done: false,
+    attachments: [],
+  });
+  saveTasks(tasks);
+
+  updateGmailStatus("メール内容からタスクを自動登録しました。", "success");
+  renderCalendar();
+  renderTaskPanel();
+  clearGmailDetail();
+}
+
 function escapeHtml(text) {
   return text
     .replace(/&/g, "&amp;")
@@ -662,6 +888,8 @@ function showGmailDetail(messageId) {
   if (gmailDetailBody) gmailDetailBody.textContent = message.body;
 }*/
 
+let currentGmailDetailMessageId = null;
+
 function showGmailDetail(messageId) {
   // キャッシュからメッセージデータを取得
   const message = gmailMessageCache[messageId];
@@ -670,29 +898,46 @@ function showGmailDetail(messageId) {
     return;
   }
 
+  currentGmailDetailMessageId = messageId;
   console.log("showGmailDetail called:", messageId, message);
 
   if (gmailDetailPanel) gmailDetailPanel.classList.remove("hidden");
 
-  // キャッシュの整形済みデータを使用
-  const subject = message.subject || "(件名なし)";
+  // 差出人・日時・本文のみを表示する
   const from = message.from || "(送信者不明)";
-  const date = message.date || "";
+  const rawDate = message.date || "";
   const bodyText = message.bodyText || message.snippet || "(本文なし)";
 
-  // 1. 各要素にデータを流し込む
-  if (gmailDetailSubject) gmailDetailSubject.textContent = subject;
-  if (gmailDetailFrom) gmailDetailFrom.textContent = `差出人: ${from}`;
-  if (gmailDetailDate) gmailDetailDate.textContent = `日時: ${date}`;
+  // 日付を日本語表記に変換
+  let japaneseDate = rawDate;
+  if (rawDate) {
+    const parsed = new Date(rawDate);
+    if (!isNaN(parsed)) {
+      japaneseDate = parsed.toLocaleString("ja-JP", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+  }
 
-  // 2. 本文を流し込む
+  if (gmailDetailSubject) gmailDetailSubject.style.display = "none";
+  if (gmailDetailHeaders) gmailDetailHeaders.style.display = "none";
+
+  if (gmailDetailFrom) {
+    gmailDetailFrom.textContent = `差出人: ${from}`;
+    gmailDetailFrom.style.display = "block";
+  }
+  if (gmailDetailDate) {
+    gmailDetailDate.textContent = `日時: ${japaneseDate}`;
+    gmailDetailDate.style.display = "block";
+  }
+
   if (gmailDetailBody) {
     gmailDetailBody.textContent = bodyText;
   }
-
-  // 3. ヘッダー詳細を表示
-  const headers = message.payload?.headers || [];
-  renderGmailDetailHeaders(headers);
 }
 
 // ウィンドウを閉じる関数
@@ -705,11 +950,18 @@ function clearGmailDetail() {
   }
   
   // 中身を空にする
-  if (gmailDetailSubject) gmailDetailSubject.textContent = "";
+  if (gmailDetailSubject) {
+    gmailDetailSubject.textContent = "";
+    gmailDetailSubject.style.display = "block";
+  }
   if (gmailDetailFrom) gmailDetailFrom.textContent = "";
   if (gmailDetailDate) gmailDetailDate.textContent = "";
   if (gmailDetailBody) gmailDetailBody.textContent = "";
-  if (gmailDetailHeaders) gmailDetailHeaders.innerHTML = "";
+  if (gmailDetailHeaders) {
+    gmailDetailHeaders.innerHTML = "";
+    gmailDetailHeaders.style.display = "block";
+  }
+  currentGmailDetailMessageId = null;
 }
 
 async function signOutGmail() {
@@ -844,7 +1096,10 @@ async function handleLogin() {
   }
 
   const users = getUsers();
-  const account = users[username];
+  let account = users[username];
+  if (!account) {
+    account = await fetchUserFromServer(username);
+  }
   if (!account) {
     showMessage("ユーザーが見つかりません。アカウントを作成してください。", "error");
     return;
@@ -888,10 +1143,15 @@ async function handleRegister() {
     showMessage("そのユーザー名は既に使用されています。", "error");
     return;
   }
+  const existingUser = await fetchUserFromServer(username);
+  if (existingUser) {
+    showMessage("そのユーザー名は既に使用されています。", "error");
+    return;
+  }
 
   const hashed = await hashPassword(password);
   users[username] = { password: hashed };
-  saveUsers(users);
+  await saveUsers(users);
 
   currentUser = username;
   saveSession(currentUser);
@@ -975,37 +1235,19 @@ function renderCalendar() {
     label.className = "day-label";
     label.textContent = day.date.getDate();
 
-    // イベント一覧コンテナ
-    const eventsContainer = document.createElement("div");
-    eventsContainer.className = "events-container";
-
-    if (tasks[key] && tasks[key].length > 0) {
-      // 上位3件を表示（必要なら増やす）
-      tasks[key].slice(0, 3).forEach((t) => {
-        const ev = document.createElement("div");
-        ev.className = "event";
-        const title = t.title || t.text || "(タイトルなし)";
-        let meta = "";
-        if (t.project) meta += `[${t.project}] `;
-        if (t.startTime) meta += `${t.startTime}`;
-        if (t.endTime) meta += t.endTime ? `-${t.endTime} ` : " ";
-        ev.textContent = `${meta}${title}`;
-        eventsContainer.appendChild(ev);
-      });
-    }
-
     const count = document.createElement("div");
     count.className = "task-count";
-    count.textContent = `${taskCount} 件`;
+    count.textContent = taskCount > 0 ? `${taskCount}件` : "";
+    cell.title = taskCount > 0 ? `${taskCount}件の予定があります` : "予定なし";
 
     cell.appendChild(label);
-    cell.appendChild(eventsContainer);
-    cell.appendChild(count);
+    if (taskCount > 0) cell.appendChild(count);
 
     cell.addEventListener("click", () => {
       selectedDate = new Date(day.date);
       renderCalendar();
       renderTaskPanel();
+      showTaskRegistrationView();
     });
 
     calendarGrid.appendChild(cell);
@@ -1143,6 +1385,23 @@ function startEditTask(dateKey, taskIndex) {
   if (taskPrioritySelect) taskPrioritySelect.value = task.priority || "normal";
   if (taskAttachmentInput) taskAttachmentInput.value = "";
   if (taskAttachmentList) renderTaskAttachmentList(task.attachments || []);
+  if (voiceInputStatus) voiceInputStatus.textContent = "";
+  if (startVoiceInputButton) {
+    startVoiceInputButton.textContent = "🎙 音声入力";
+    startVoiceInputButton.disabled = false;
+  }
+  if (voiceDateInputStatus) voiceDateInputStatus.textContent = "";
+  if (startVoiceDateInputButton) {
+    startVoiceDateInputButton.disabled = false;
+  }
+  if (voiceStartTimeInputStatus) voiceStartTimeInputStatus.textContent = "";
+  if (startVoiceStartTimeInputButton) {
+    startVoiceStartTimeInputButton.disabled = false;
+  }
+  if (voiceEndTimeInputStatus) voiceEndTimeInputStatus.textContent = "";
+  if (startVoiceEndTimeInputButton) {
+    startVoiceEndTimeInputButton.disabled = false;
+  }
 
   // ボタンテキストを「更新」に変更
   if (addTaskButton) addTaskButton.textContent = "更新";
@@ -1261,10 +1520,310 @@ async function addTask() {
   if (taskAttachmentInput) taskAttachmentInput.value = "";
   if (taskAttachmentList) taskAttachmentList.innerHTML = "";
   if (addTaskButton) addTaskButton.textContent = "追加";
+  if (voiceInputStatus) voiceInputStatus.textContent = "";
+  if (voiceDateInputStatus) voiceDateInputStatus.textContent = "";
+  if (voiceStartTimeInputStatus) voiceStartTimeInputStatus.textContent = "";
+  if (voiceEndTimeInputStatus) voiceEndTimeInputStatus.textContent = "";
 
   hideTaskRegistrationView();
   renderCalendar();
   renderTaskPanel();
+}
+
+function isSpeechRecognitionSupported() {
+  return typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+}
+
+function updateVoiceStatus(message) {
+  if (voiceInputStatus) {
+    voiceInputStatus.textContent = message;
+  }
+}
+
+function startTaskTitleVoiceInput() {
+  if (!taskTitleInput || !startVoiceInputButton) return;
+
+  if (!isSpeechRecognitionSupported()) {
+    updateVoiceStatus("このブラウザは音声入力に対応していません。Chromeなど対応ブラウザでお試しください。");
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = "ja-JP";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+
+  updateVoiceStatus("話してください... 音声認識中です。");
+  startVoiceInputButton.textContent = "停止";
+  startVoiceInputButton.disabled = true;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    taskTitleInput.value = transcript;
+    updateVoiceStatus(`認識結果: ${transcript}`);
+  };
+
+  recognition.onerror = (event) => {
+    const message = event.error === "no-speech" ? "音声が検出されませんでした。もう一度お試しください。" : `音声認識エラー: ${event.error}`;
+    updateVoiceStatus(message);
+  };
+
+  recognition.onend = () => {
+    updateVoiceStatus("音声入力を停止しました。");
+    startVoiceInputButton.textContent = "🎙 音声入力";
+    startVoiceInputButton.disabled = false;
+  };
+
+  recognition.start();
+}
+
+function parseVoiceDateText(text) {
+  // 例：「2026年6月7日」「2026-06-07」「6月7日」「明日」など
+  const trimmed = text.trim();
+  
+  // 「今日」の場合
+  if (trimmed === "今日") {
+    return formatDateKey(new Date());
+  }
+  
+  // 「明日」の場合
+  if (trimmed === "明日") {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return formatDateKey(tomorrow);
+  }
+  
+  // YYYY-MM-DD 形式の場合（そのまま返す）
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  
+  // 「2026年6月7日」「2026年06月07日」パターン
+  const yearMonthDayMatch = trimmed.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (yearMonthDayMatch) {
+    const year = yearMonthDayMatch[1];
+    const month = String(yearMonthDayMatch[2]).padStart(2, "0");
+    const day = String(yearMonthDayMatch[3]).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  
+  // 「6月7日」パターン（今年と仮定）
+  const monthDayMatch = trimmed.match(/(\d{1,2})月(\d{1,2})日/);
+  if (monthDayMatch) {
+    const year = new Date().getFullYear();
+    const month = String(monthDayMatch[1]).padStart(2, "0");
+    const day = String(monthDayMatch[2]).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+  
+  return null;
+}
+
+function parseVoiceTimeText(text) {
+  // 例：「09時30分」「9:30」「9時30」「9時」など
+  const trimmed = text.trim();
+  
+  // HH:MM 形式の場合（そのまま返す）
+  if (/^\d{1,2}:\d{2}$/.test(trimmed)) {
+    const [hours, minutes] = trimmed.split(":");
+    return `${String(hours).padStart(2, "0")}:${minutes}`;
+  }
+  
+  // 「09時30分」「9時30分」パターン
+  const hourMinuteMatch = trimmed.match(/(\d{1,2})時(\d{1,2})分/);
+  if (hourMinuteMatch) {
+    const hours = String(hourMinuteMatch[1]).padStart(2, "0");
+    const minutes = String(hourMinuteMatch[2]).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+  
+  // 「9時30」パターン
+  const hourMinuteAltMatch = trimmed.match(/(\d{1,2})時(\d{1,2})$/);
+  if (hourMinuteAltMatch) {
+    const hours = String(hourMinuteAltMatch[1]).padStart(2, "0");
+    const minutes = String(hourMinuteAltMatch[2]).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+  
+  // 「9時」パターン
+  const hourOnlyMatch = trimmed.match(/(\d{1,2})時$/);
+  if (hourOnlyMatch) {
+    const hours = String(hourOnlyMatch[1]).padStart(2, "0");
+    return `${hours}:00`;
+  }
+  
+  return null;
+}
+
+function startVoiceDateInput() {
+  if (!taskDateInput || !startVoiceDateInputButton) return;
+
+  if (!isSpeechRecognitionSupported()) {
+    if (voiceDateInputStatus) {
+      voiceDateInputStatus.textContent = "このブラウザは音声入力に対応していません。";
+    }
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = "ja-JP";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+
+  if (voiceDateInputStatus) {
+    voiceDateInputStatus.textContent = "日付を話してください...（例：6月7日）";
+  }
+  startVoiceDateInputButton.disabled = true;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    const dateStr = parseVoiceDateText(transcript);
+    if (dateStr) {
+      taskDateInput.value = dateStr;
+      if (voiceDateInputStatus) {
+        voiceDateInputStatus.textContent = `認識結果: ${transcript} → ${dateStr}`;
+      }
+    } else {
+      if (voiceDateInputStatus) {
+        voiceDateInputStatus.textContent = `解析失敗: ${transcript} は日付形式として認識できません。`;
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    const message = event.error === "no-speech" ? "音声が検出されませんでした。" : `エラー: ${event.error}`;
+    if (voiceDateInputStatus) {
+      voiceDateInputStatus.textContent = message;
+    }
+  };
+
+  recognition.onend = () => {
+    startVoiceDateInputButton.disabled = false;
+  };
+
+  recognition.start();
+}
+
+function startVoiceStartTimeInput() {
+  if (!taskStartInput || !startVoiceStartTimeInputButton) return;
+
+  if (!isSpeechRecognitionSupported()) {
+    if (voiceStartTimeInputStatus) {
+      voiceStartTimeInputStatus.textContent = "このブラウザは音声入力に対応していません。";
+    }
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = "ja-JP";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+
+  if (voiceStartTimeInputStatus) {
+    voiceStartTimeInputStatus.textContent = "開始時刻を話してください...（例：9時30分）";
+  }
+  startVoiceStartTimeInputButton.disabled = true;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    const timeStr = parseVoiceTimeText(transcript);
+    if (timeStr) {
+      taskStartInput.value = timeStr;
+      if (voiceStartTimeInputStatus) {
+        voiceStartTimeInputStatus.textContent = `認識結果: ${transcript} → ${timeStr}`;
+      }
+    } else {
+      if (voiceStartTimeInputStatus) {
+        voiceStartTimeInputStatus.textContent = `解析失敗: ${transcript} は時刻形式として認識できません。`;
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    const message = event.error === "no-speech" ? "音声が検出されませんでした。" : `エラー: ${event.error}`;
+    if (voiceStartTimeInputStatus) {
+      voiceStartTimeInputStatus.textContent = message;
+    }
+  };
+
+  recognition.onend = () => {
+    startVoiceStartTimeInputButton.disabled = false;
+  };
+
+  recognition.start();
+}
+
+function startVoiceEndTimeInput() {
+  if (!taskEndInput || !startVoiceEndTimeInputButton) return;
+
+  if (!isSpeechRecognitionSupported()) {
+    if (voiceEndTimeInputStatus) {
+      voiceEndTimeInputStatus.textContent = "このブラウザは音声入力に対応していません。";
+    }
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = "ja-JP";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+
+  if (voiceEndTimeInputStatus) {
+    voiceEndTimeInputStatus.textContent = "終了時刻を話してください...（例：14時30分）";
+  }
+  startVoiceEndTimeInputButton.disabled = true;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    const timeStr = parseVoiceTimeText(transcript);
+    if (timeStr) {
+      taskEndInput.value = timeStr;
+      if (voiceEndTimeInputStatus) {
+        voiceEndTimeInputStatus.textContent = `認識結果: ${transcript} → ${timeStr}`;
+      }
+    } else {
+      if (voiceEndTimeInputStatus) {
+        voiceEndTimeInputStatus.textContent = `解析失敗: ${transcript} は時刻形式として認識できません。`;
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    const message = event.error === "no-speech" ? "音声が検出されませんでした。" : `エラー: ${event.error}`;
+    if (voiceEndTimeInputStatus) {
+      voiceEndTimeInputStatus.textContent = message;
+    }
+  };
+
+  recognition.onend = () => {
+    startVoiceEndTimeInputButton.disabled = false;
+  };
+
+  recognition.start();
+}
+
+if (startVoiceInputButton) {
+  startVoiceInputButton.addEventListener("click", startTaskTitleVoiceInput);
+}
+
+if (startVoiceDateInputButton) {
+  startVoiceDateInputButton.addEventListener("click", startVoiceDateInput);
+}
+
+if (startVoiceStartTimeInputButton) {
+  startVoiceStartTimeInputButton.addEventListener("click", startVoiceStartTimeInput);
+}
+
+if (startVoiceEndTimeInputButton) {
+  startVoiceEndTimeInputButton.addEventListener("click", startVoiceEndTimeInput);
 }
 
 if (prevMonthBtn) {
@@ -1337,6 +1896,10 @@ if (gmailAuthorizeButton) {
 
 if (gmailRefreshButton) {
   gmailRefreshButton.addEventListener("click", loadGmailMessages);
+}
+
+if (gmailCreateTaskButton) {
+  gmailCreateTaskButton.addEventListener("click", createTaskFromEmail);
 }
 
 if (gmailDetailCloseButton) {
@@ -1412,17 +1975,23 @@ async function initialize() {
       window.location.href = "mode.html";
       return;
     }
+    await loadUsersFromServer();
     showView(false);
     showLoginForm();
     return;
   }
 
   if (page === "mode.html") {
-    if (!sessionUser || !getUsers()[sessionUser]) {
+    if (!sessionUser) {
       window.location.href = "index.html";
       return;
     }
     currentUser = sessionUser;
+    await loadUsersFromServer();
+    if (!getUsers()[sessionUser]) {
+      window.location.href = "index.html";
+      return;
+    }
     currentMode = null;
     clearMode();
     updateUserState();
@@ -1431,32 +2000,46 @@ async function initialize() {
   }
 
   if (page === "app.html") {
-    if (!sessionUser || !getUsers()[sessionUser]) {
+    if (!sessionUser) {
       window.location.href = "index.html";
       return;
     }
     currentUser = sessionUser;
     currentMode = sessionMode;
+    await loadUsersFromServer();
+    if (!getUsers()[sessionUser]) {
+      window.location.href = "index.html";
+      return;
+    }
     if (!currentMode) {
       window.location.href = "mode.html";
       return;
     }
+    await loadProjectsFromServer(currentUser);
+    await loadTasksFromServer(currentUser, currentMode);
     updateUserState();
     showAppView();
     return;
   }
 
   if (page === "attachments.html") {
-    if (!sessionUser || !getUsers()[sessionUser]) {
+    if (!sessionUser) {
       window.location.href = "index.html";
       return;
     }
     currentUser = sessionUser;
     currentMode = sessionMode;
+    await loadUsersFromServer();
+    if (!getUsers()[sessionUser]) {
+      window.location.href = "index.html";
+      return;
+    }
     if (!currentMode) {
       window.location.href = "mode.html";
       return;
     }
+    await loadProjectsFromServer(currentUser);
+    await loadTasksFromServer(currentUser, currentMode);
     updateUserState();
     renderAttachmentsPage();
     return;

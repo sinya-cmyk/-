@@ -79,18 +79,30 @@
             </div>
             <div class="task-form grid">
               <div class="form-row">
-                <label>
-                  日付
-                  <input id="taskDateInput" type="date">
-                </label>
-                <label>
-                  開始時刻
-                  <input id="taskStartInput" type="time">
-                </label>
-                <label>
-                  終了時刻
-                  <input id="taskEndInput" type="time">
-                </label>
+                <div>
+                  <label>
+                    日付
+                    <input id="taskDateInput" type="date">
+                  </label>
+                  <button id="startVoiceDateInputButton" type="button" class="voice-button">🎙</button>
+                  <div id="voiceDateInputStatus" class="voice-status"></div>
+                </div>
+                <div>
+                  <label>
+                    開始時刻
+                    <input id="taskStartInput" type="time">
+                  </label>
+                  <button id="startVoiceStartTimeInputButton" type="button" class="voice-button">🎙</button>
+                  <div id="voiceStartTimeInputStatus" class="voice-status"></div>
+                </div>
+                <div>
+                  <label>
+                    終了時刻
+                    <input id="taskEndInput" type="time">
+                  </label>
+                  <button id="startVoiceEndTimeInputButton" type="button" class="voice-button">🎙</button>
+                  <div id="voiceEndTimeInputStatus" class="voice-status"></div>
+                </div>
               </div>
               <div class="form-row">
                 <label>
@@ -112,10 +124,14 @@
                 <input id="taskAttachmentInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple>
               </label>
               <div id="taskAttachmentList" class="attachment-list"></div>
-              <div class="form-row">
+              <div class="form-row task-title-row">
                 <label class="full-width">
                   タイトル
-                  <input id="taskTitleInput" type="text" placeholder="タイトルを入力" maxlength="120">
+                  <div class="voice-input-row">
+                    <input id="taskTitleInput" type="text" placeholder="タイトルを入力" maxlength="120">
+                    <button id="startVoiceInputButton" type="button" class="voice-button">🎙 音声入力</button>
+                  </div>
+                  <div id="voiceInputStatus" class="voice-status"></div>
                 </label>
               </div>
               <label class="wide">
@@ -149,7 +165,10 @@
               <p id="gmailDetailFrom"></p>
               <small id="gmailDetailDate"></small>
             </div>
-            <button id="gmailDetailCloseButton" type="button" class="secondary-button">閉じる</button>
+            <div class="gmail-detail-actions">
+              <button id="gmailCreateTaskButton" type="button" class="secondary-button">タスクに登録</button>
+              <button id="gmailDetailCloseButton" type="button" class="secondary-button">閉じる</button>
+            </div>
           </div>
           <div id="gmailDetailHeaders" class="gmail-detail-headers"></div>
           <pre id="gmailDetailBody" class="gmail-detail-body"></pre>
