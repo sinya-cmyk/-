@@ -84,7 +84,9 @@ let isEditingTask = false;
 let editingTaskIndex = null;
 let editingTaskDateKey = null;
 let gmailMessageCache = {};
+let reminderCheckTimer = null;
 
+const REMINDER_CHECK_INTERVAL_MS = 60000;
 const USERS_KEY = "calendarTaskManager.users";
 const SESSION_KEY = "calendarTaskManager.session";
 const MODE_KEY = "calendarTaskManager.mode";
@@ -389,6 +391,7 @@ function showAppView() {
   renderCalendar();
   renderTaskPanel();
   showTodoListView();
+  initializeReminderService();
 }
 
 function renderAttachmentsPage() {
@@ -784,10 +787,13 @@ function parseEmailToTask(message) {
   if (projectKeywords.業務.test(titleSource) || projectKeywords.業務.test(rawBody)) project = "業務";
 
   const parsedDate = new Date(message.date);
-  const dateKey = !isNaN(parsedDate) ? formatDateKey(parsedDate) : formatDateKey(new Date());
-  const startTime = !isNaN(parsedDate)
+  const isValidDate = !isNaN(parsedDate);
+  const dateKey = isValidDate ? formatDateKey(parsedDate) : formatDateKey(new Date());
+  const startTime = isValidDate
     ? parsedDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
     : "";
+  const reminder = isValidDate;
+  const reminderMinutesBefore = reminder ? 1440 : 0;
 
   return {
     title,
@@ -797,6 +803,9 @@ function parseEmailToTask(message) {
     startTime,
     endTime: "",
     dateKey,
+    reminder,
+    reminderMinutesBefore,
+    reminderNotified: false,
   };
 }
 
@@ -840,6 +849,83 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function requestReminderPermission() {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch((error) => {
+      console.warn("Notification permission request failed", error);
+    });
+  }
+}
+
+function getTaskReminderTime(task, dateKey) {
+  if (!task.reminder || !task.startTime) return null;
+  const [hours, minutes] = task.startTime.split(":");
+  if (!hours || !minutes) return null;
+
+  const reminderDate = new Date(`${dateKey}T${hours.padStart(2, "0")}:${minutes}:00`);
+  reminderDate.setMinutes(reminderDate.getMinutes() - (task.reminderMinutesBefore || 0));
+  return reminderDate;
+}
+
+function getReminderLabel(minutesBefore) {
+  const labels = {
+    5: "5分前",
+    10: "10分前",
+    15: "15分前",
+    30: "30分前",
+    60: "1時間前",
+    1440: "1日前",
+  };
+  return labels[minutesBefore] || `${minutesBefore}分前`;
+}
+
+function notifyTaskReminder(task, dateKey) {
+  const title = task.title || "リマインドタスク";
+  const body = `${dateKey} ${task.startTime || "時間未設定"} のタスクを確認してください。`;
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("タスクリマインド", {
+      body,
+    });
+  } else {
+    alert(`リマインド: ${title}\n${body}`);
+  }
+}
+
+function checkTaskReminders() {
+  if (!currentUser || !currentMode) return;
+  if (!("Notification" in window) || Notification.permission === "denied") return;
+
+  const tasks = getTasks();
+  let changed = false;
+  const now = new Date();
+
+  Object.entries(tasks).forEach(([dateKey, taskItems]) => {
+    taskItems.forEach((task) => {
+      if (!task.reminder || task.reminderNotified || !task.startTime) return;
+      const reminderTime = getTaskReminderTime(task, dateKey);
+      if (!reminderTime) return;
+      if (now >= reminderTime) {
+        notifyTaskReminder(task, dateKey);
+        task.reminderNotified = true;
+        changed = true;
+      }
+    });
+  });
+
+  if (changed) {
+    saveTasks(tasks);
+  }
+}
+
+function initializeReminderService() {
+  if (reminderCheckTimer) return;
+  requestReminderPermission();
+  checkTaskReminders();
+  reminderCheckTimer = window.setInterval(checkTaskReminders, REMINDER_CHECK_INTERVAL_MS);
 }
 
 function renderGmailDetailHeaders(headers) {
@@ -998,7 +1084,7 @@ async function loadGmailMessages() {
     const response = await gapi.client.gmail.users.messages.list({
       userId: "me",
       labelIds: ["INBOX"],
-      maxResults: 10,
+      maxResults: 50,
     });
 
     const messages = response.result.messages || [];
@@ -1251,7 +1337,8 @@ function renderCalendar() {
       selectedDate = new Date(day.date);
       renderCalendar();
       renderTaskPanel();
-      showTaskRegistrationView();
+      // 日別スケジュールモーダルを開く
+      showDailyScheduleModal(selectedDate);
     });
 
     calendarGrid.appendChild(cell);
@@ -1286,6 +1373,7 @@ function renderTaskPanel() {
     const endTime = task.endTime || "--:--";
     const project = task.project || "未設定";
     const priority = task.priority || "normal";
+    const reminderText = task.reminder ? `⏰ ${getReminderLabel(task.reminderMinutesBefore)}` : "";
 
     // 優先度ラベル
     const priorityLabel = {
@@ -1299,7 +1387,7 @@ function renderTaskPanel() {
     header.className = "task-item-header";
     header.innerHTML = `
       <div class="task-item-title">${title}</div>
-      <div class="task-item-meta"><span class="priority-badge">${priorityLabel}</span> ${project} | ${startTime} 〜 ${endTime}</div>
+      <div class="task-item-meta"><span class="priority-badge">${priorityLabel}</span> ${project} | ${startTime} 〜 ${endTime}${reminderText ? ` | ${reminderText}` : ""}</div>
     `;
 
     const detail = document.createElement("p");
@@ -1312,7 +1400,7 @@ function renderTaskPanel() {
     const toggleButton = document.createElement("button");
     toggleButton.type = "button";
     toggleButton.className = "complete";
-    toggleButton.textContent = task.done ? "未完了" : "完了";
+    toggleButton.textContent = task.done ? "未完" : "完了";
     toggleButton.addEventListener("click", () => {
       const tasksForDay = getTasks();
       tasksForDay[key][index].done = !tasksForDay[key][index].done;
@@ -1476,6 +1564,9 @@ async function addTask() {
     endTime,
     project,
     priority,
+    reminder: existingTask?.reminder || false,
+    reminderMinutesBefore: existingTask?.reminderMinutesBefore || 0,
+    reminderNotified: existingTask?.reminderNotified || false,
     done: existingTask?.done || false,
     attachments: newAttachments !== null ? newAttachments : existingTask?.attachments || [],
   });
@@ -1660,6 +1751,128 @@ function parseVoiceTimeText(text) {
   
   return null;
 }
+
+// --- 日別スケジュールモーダル関連 ---
+function renderDailyScheduleModal(dateKey) {
+  const container = document.getElementById("dailyScheduleList");
+  const label = document.getElementById("dailyScheduleDateLabel");
+  if (!container || !label) return;
+  const tasks = getTasks();
+  const items = tasks[dateKey] || [];
+  label.textContent = `${dateKey}`;
+  container.innerHTML = "";
+
+  if (items.length === 0) {
+    container.innerHTML = `<div class="daily-empty">この日に登録されたタスクはありません。</div>`;
+    return;
+  }
+
+  items.forEach((task, idx) => {
+    const row = document.createElement("div");
+    row.className = "daily-task-row";
+    row.dataset.index = idx;
+
+    const main = document.createElement("div");
+    main.className = "daily-task-main";
+
+    const title = document.createElement("div");
+    title.className = "daily-task-title";
+    title.textContent = task.title || "(タイトルなし)";
+
+    const reminderText = task.reminder ? ` ⏰${getReminderLabel(task.reminderMinutesBefore)}` : "";
+    const meta = document.createElement("div");
+    meta.className = "daily-task-meta";
+    meta.textContent = `${task.project || ""} ${task.startTime || ""}〜${task.endTime || ""}${reminderText}`;
+
+    main.appendChild(title);
+    main.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "daily-task-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "secondary-button";
+    editBtn.textContent = "編集";
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hideDailyScheduleModal();
+      startEditTask(dateKey, idx);
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "delete";
+    deleteBtn.textContent = "削除";
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const tasksData = getTasks();
+      if (!tasksData[dateKey]) return;
+      const removed = tasksData[dateKey].splice(idx, 1)[0];
+      if (tasksData[dateKey].length === 0) delete tasksData[dateKey];
+      saveTasks(tasksData);
+      if (removed) logTaskEvent("delete", { task: removed, date: dateKey }).catch(() => {});
+      renderCalendar();
+      // 再描画（同じ日付キー）
+      renderDailyScheduleModal(dateKey);
+    });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    row.appendChild(main);
+    row.appendChild(actions);
+
+    // 行クリックで編集
+    row.addEventListener("click", () => {
+      hideDailyScheduleModal();
+      startEditTask(dateKey, idx);
+    });
+
+    container.appendChild(row);
+  });
+}
+
+function showDailyScheduleModal(date) {
+  const modal = document.getElementById("dailyScheduleModal");
+  if (!modal) return;
+  const key = formatDateKey(date instanceof Date ? date : new Date(date));
+  renderDailyScheduleModal(key);
+  modal.classList.remove("hidden");
+}
+
+function hideDailyScheduleModal() {
+  const modal = document.getElementById("dailyScheduleModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// 日別モーダルのボタンイベントを登録
+document.addEventListener("DOMContentLoaded", () => {
+  const closeBtn = document.getElementById("dailyScheduleCloseButton");
+  const addBtn = document.getElementById("dailyScheduleAddButton");
+  const modal = document.getElementById("dailyScheduleModal");
+  if (closeBtn) closeBtn.addEventListener("click", () => hideDailyScheduleModal());
+  if (modal) modal.addEventListener("click", (e) => {
+    if (e.target === modal) hideDailyScheduleModal();
+  });
+  if (addBtn) addBtn.addEventListener("click", () => {
+    // モーダルを閉じてタスク登録モーダルを開く
+    hideDailyScheduleModal();
+    // selectedDate は既に設定されているはずだが念のため taskDateInput を更新
+    if (taskDateInput) taskDateInput.value = formatDateKey(selectedDate);
+    showTaskRegistrationView();
+  });
+});
 
 function startVoiceDateInput() {
   if (!taskDateInput || !startVoiceDateInputButton) return;

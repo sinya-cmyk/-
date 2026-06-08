@@ -143,6 +143,23 @@
           </div>
         </div>
 
+        <!-- 日別スケジュール表示モーダル -->
+        <div id="dailyScheduleModal" class="daily-schedule-modal-overlay hidden">
+          <div class="daily-schedule-modal">
+            <div class="daily-schedule-header">
+              <div>
+                <h2 id="dailyScheduleDateLabel">日付</h2>
+                <p>その日のスケジュール一覧</p>
+              </div>
+              <div class="daily-schedule-actions">
+                <button id="dailyScheduleAddButton" type="button" class="secondary-button">新規タスク追加</button>
+                <button id="dailyScheduleCloseButton" type="button" class="modal-close-button">✕</button>
+              </div>
+            </div>
+            <div id="dailyScheduleList" class="daily-schedule-list"></div>
+          </div>
+        </div>
+
         <ul class="task-list" id="taskList"></ul>
       </section>
 
