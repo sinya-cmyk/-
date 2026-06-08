@@ -225,48 +225,52 @@ function saveProjectData(data) {
 }
 
 async function syncProjectsToServer(projects) {
-  if (!currentUser) return;
+  if (!currentUser || !currentMode) return;
   try {
     await fetchJson('/api/projects', {
       method: 'POST',
-      body: JSON.stringify({ user: currentUser, projects }),
+      body: JSON.stringify({ user: currentUser, mode: currentMode, projects }),
     });
   } catch (error) {
     console.warn('プロジェクトのDB保存に失敗しました', error);
   }
 }
 
-async function loadProjectsFromServer(user) {
-  if (!user) return [];
+async function loadProjectsFromServer(user, mode) {
+  if (!user || !mode) return [];
   try {
-    const result = await fetchJson(`/api/projects?user=${encodeURIComponent(user)}`);
+    const result = await fetchJson(`/api/projects?user=${encodeURIComponent(user)}&mode=${encodeURIComponent(mode)}`);
     if (Array.isArray(result.projects)) {
       const allProjects = getProjectData();
-      allProjects[user] = result.projects;
+      const key = `${user}_${mode}`;
+      allProjects[key] = result.projects;
       saveProjectData(allProjects);
       return result.projects;
     }
   } catch (error) {
     console.warn('プロジェクト取得に失敗しました', error);
   }
-  return getProjectData()[user] || [];
+  const all = getProjectData();
+  return all[`${user}_${mode}`] || [];
 }
 
 function getProjects() {
-  if (!currentUser) return [];
+  if (!currentUser || !currentMode) return [];
   const allProjects = getProjectData();
-  if (!allProjects[currentUser]) {
-    allProjects[currentUser] = ["個人", "業務", "研究", "その他"];
+  const key = `${currentUser}_${currentMode}`;
+  if (!allProjects[key]) {
+    allProjects[key] = ["個人", "業務", "研究", "その他"];
     saveProjectData(allProjects);
-    syncProjectsToServer(allProjects[currentUser]).catch(() => {});
+    syncProjectsToServer(allProjects[key]).catch(() => {});
   }
-  return allProjects[currentUser];
+  return allProjects[key];
 }
 
 function saveProjects(projects) {
-  if (!currentUser) return;
+  if (!currentUser || !currentMode) return;
   const allProjects = getProjectData();
-  allProjects[currentUser] = projects;
+  const key = `${currentUser}_${currentMode}`;
+  allProjects[key] = projects;
   saveProjectData(allProjects);
   syncProjectsToServer(projects).catch(() => {});
 }
@@ -2015,7 +2019,7 @@ async function initialize() {
       window.location.href = "mode.html";
       return;
     }
-    await loadProjectsFromServer(currentUser);
+    await loadProjectsFromServer(currentUser, currentMode);
     await loadTasksFromServer(currentUser, currentMode);
     updateUserState();
     showAppView();
@@ -2038,7 +2042,7 @@ async function initialize() {
       window.location.href = "mode.html";
       return;
     }
-    await loadProjectsFromServer(currentUser);
+    await loadProjectsFromServer(currentUser, currentMode);
     await loadTasksFromServer(currentUser, currentMode);
     updateUserState();
     renderAttachmentsPage();

@@ -12,6 +12,25 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   }
 });
 
+// Ensure existing projects table has 'mode' column (for older DBs)
+db.get("PRAGMA table_info('projects')", (err, row) => {
+  // If single row returned, need to check all columns instead
+});
+db.all("PRAGMA table_info('projects')", (err, rows) => {
+  if (err) return;
+  const hasMode = rows.some((c) => c.name === 'mode');
+  if (!hasMode) {
+    try {
+      db.run("ALTER TABLE projects ADD COLUMN mode TEXT DEFAULT 'private'", (alterErr) => {
+        if (alterErr) console.warn('projects テーブルに mode カラムを追加できませんでした', alterErr);
+        else console.log('projects テーブルに mode カラムを追加しました');
+      });
+    } catch (e) {
+      console.warn('mode カラム追加処理でエラー', e);
+    }
+  }
+});
+
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -20,6 +39,7 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL,
+    mode TEXT NOT NULL,
     project TEXT NOT NULL
   )`);
   db.run(`CREATE TABLE IF NOT EXISTS tasks (
@@ -113,8 +133,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && urlPath === '/api/projects') {
       const username = query.get('user');
-      if (!username) return sendJson(res, 400, { error: 'userが必要です' });
-      db.all('SELECT project FROM projects WHERE username = ? ORDER BY id', [username], (err, rows) => {
+      const mode = query.get('mode');
+      if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
+      db.all('SELECT project FROM projects WHERE username = ? AND mode = ? ORDER BY id', [username, mode], (err, rows) => {
         if (err) return sendJson(res, 500, { error: 'DBエラー' });
         const projects = rows.map((row) => row.project);
         sendJson(res, 200, { projects });
@@ -124,12 +145,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && urlPath === '/api/projects') {
       const body = await parseRequestBody(req);
-      if (!body.user || !Array.isArray(body.projects)) return sendJson(res, 400, { error: '無効なパラメーター' });
+      if (!body.user || !body.mode || !Array.isArray(body.projects)) return sendJson(res, 400, { error: '無効なパラメーター' });
       db.serialize(() => {
-        db.run('DELETE FROM projects WHERE username = ?', [body.user], (err) => {
+        db.run('DELETE FROM projects WHERE username = ? AND mode = ?', [body.user, body.mode], (err) => {
           if (err) return sendJson(res, 500, { error: 'DBエラー' });
-          const stmt = db.prepare('INSERT INTO projects(username, project) VALUES (?, ?)');
-          body.projects.forEach((project) => stmt.run(body.user, project));
+          const stmt = db.prepare('INSERT INTO projects(username, mode, project) VALUES (?, ?, ?)');
+          body.projects.forEach((project) => stmt.run(body.user, body.mode, project));
           stmt.finalize((err2) => {
             if (err2) return sendJson(res, 500, { error: 'DBエラー' });
             sendJson(res, 200, { status: 'ok' });
