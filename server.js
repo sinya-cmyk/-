@@ -57,6 +57,19 @@ db.serialize(() => {
     action TEXT,
     payload TEXT
   )`);
+  db.run(`CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    mode TEXT,
+    filename TEXT,
+    filepath TEXT,
+    size INTEGER,
+    type TEXT,
+    date TEXT,
+    project TEXT,
+    taskTitle TEXT,
+    createdAt TEXT
+  )`);
 });
 
 function sendJson(res, status, body) {
@@ -84,7 +97,7 @@ function parseRequestBody(req) {
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url ? req.url.split('?')[0] : '/';
   const query = req.url?.includes('?') ? new URLSearchParams(req.url.split('?')[1]) : new URLSearchParams();
-  console.log(`Request: ${req.method} ${req.url}`);
+  console.log(`Request: ${req.method} ${req.url} -> urlPath: ${urlPath}`);
 
   try {
     if (req.method === 'GET' && urlPath === '/api/users') {
@@ -209,10 +222,110 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // attachments upload via base64 JSON
+    if (req.method === 'POST' && urlPath === '/api/attachments') {
+      const body = await parseRequestBody(req);
+      if (!body.user || !body.mode || !Array.isArray(body.files)) return sendJson(res, 400, { error: '無効なパラメーター' });
+      const saved = [];
+      const baseDir = path.join(__dirname, 'attachments', `${body.user}_${body.mode}`);
+      if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
+
+      for (const file of body.files) {
+        try {
+          const name = file.name || `file_${Date.now()}`;
+          // ensure unique filename
+          let saveName = name;
+          let counter = 1;
+          while (fs.existsSync(path.join(baseDir, saveName))) {
+            const ext = path.extname(name);
+            const base = path.basename(name, ext);
+            saveName = `${base}_${counter}${ext}`;
+            counter += 1;
+          }
+          const filePath = path.join(baseDir, saveName);
+          const buffer = Buffer.from(file.base64 || '', 'base64');
+          fs.writeFileSync(filePath, buffer);
+          const relPath = `/attachments/${body.user}_${body.mode}/${saveName}`;
+          const now = new Date().toISOString();
+          db.run(
+            'INSERT INTO attachments(username, mode, filename, filepath, size, type, date, project, taskTitle, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [body.user, body.mode, saveName, relPath, buffer.length, file.type || '', file.date || '', file.project || '', file.taskTitle || '', now]
+          );
+          saved.push({ name: saveName, url: relPath, size: buffer.length, type: file.type || '' });
+        } catch (e) {
+          console.error('Failed to save attachment', e);
+        }
+      }
+      return sendJson(res, 200, { status: 'ok', files: saved });
+    }
+
+    if (req.method === 'GET' && urlPath === '/api/attachments') {
+      const username = query.get('user');
+      const mode = query.get('mode');
+      if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
+      db.all('SELECT filename, filepath, size, type, date, project, taskTitle, createdAt FROM attachments WHERE username = ? AND mode = ? ORDER BY id DESC', [username, mode], (err, rows) => {
+        if (err) return sendJson(res, 500, { error: 'DBエラー' });
+        sendJson(res, 200, { attachments: rows || [] });
+      });
+      return;
+    }
+
+    if (req.method === 'DELETE' && urlPath === '/api/attachments') {
+      const username = query.get('user');
+      const mode = query.get('mode');
+      const filename = query.get('filename');
+      if (!username || !mode || !filename) return sendJson(res, 400, { error: 'user, mode, filename が必要です' });
+      const filePath = path.join(__dirname, 'attachments', `${username}_${mode}`, filename);
+      if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: 'ファイルが見つかりません' });
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {
+        console.error('Failed to delete file', e);
+        return sendJson(res, 500, { error: 'ファイル削除エラー' });
+      }
+      db.run('DELETE FROM attachments WHERE username = ? AND mode = ? AND filename = ?', [username, mode, filename], (err) => {
+        if (err) {
+          console.error('Failed to delete attachment metadata', err);
+          return sendJson(res, 500, { error: 'DB削除エラー' });
+        }
+        sendJson(res, 200, { status: 'ok' });
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && urlPath === '/api/download') {
+      const username = query.get('user');
+      const mode = query.get('mode');
+      const filename = query.get('filename');
+      console.log(`Download request: user=${username}, mode=${mode}, filename=${filename}`);
+      if (!username || !mode || !filename) return sendJson(res, 400, { error: 'user, mode, filename が必要です' });
+      const filePath = path.join(__dirname, 'attachments', `${username}_${mode}`, filename);
+      console.log(`Checking file at: ${filePath}`);
+      console.log(`File exists: ${fs.existsSync(filePath)}`);
+      if (!fs.existsSync(filePath)) {
+        console.log(`File not found. Directory contents:`, fs.readdirSync(path.join(__dirname, 'attachments'), { recursive: true }));
+        return sendJson(res, 404, { error: 'ファイルが見つかりません' });
+      }
+      try {
+        const fileContent = fs.readFileSync(filePath);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.writeHead(200);
+        res.end(fileContent);
+      } catch (e) {
+        console.error('Failed to read file', e);
+        return sendJson(res, 500, { error: 'ファイル読込エラー' });
+      }
+      return;
+    }
+
     if (req.method === 'GET' && urlPath === '/api/logs') {
       db.all('SELECT timestamp, username, mode, action, payload FROM logs ORDER BY id DESC LIMIT 100', (err, rows) => {
-        if (err) return sendJson(res, 500, { error: 'DBエラー' });
-        const items = rows.map((row) => {
+        if (err) {
+          console.error('Logs query error:', err);
+          return sendJson(res, 500, { error: 'DBエラー' });
+        }
+        const items = (rows || []).map((row) => {
           let payload;
           try { payload = JSON.parse(row.payload); } catch (_) { payload = { raw: row.payload }; }
           return { timestamp: row.timestamp, user: row.username, mode: row.mode, action: row.action, payload };

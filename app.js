@@ -59,6 +59,8 @@ const gmailStatus = document.getElementById("gmailStatus");
 const gmailList = document.getElementById("gmailList");
 const gmailAuthorizeButton = document.getElementById("gmailAuthorizeButton");
 const gmailRefreshButton = document.getElementById("gmailRefreshButton");
+const gmailSearchInput = document.getElementById("gmailSearchInput");
+const gmailSearchButton = document.getElementById("gmailSearchButton");
 const gmailDetailPanel = document.getElementById("gmailDetailPanel");
 const gmailDetailSubject = document.getElementById("gmailDetailSubject");
 const gmailDetailFrom = document.getElementById("gmailDetailFrom");
@@ -83,6 +85,7 @@ let currentMode = null;
 let isEditingTask = false;
 let editingTaskIndex = null;
 let editingTaskDateKey = null;
+let currentTaskAttachments = [];
 let gmailMessageCache = {};
 let reminderCheckTimer = null;
 
@@ -381,7 +384,7 @@ function showAppView() {
   const taskPanel = document.querySelector(".task-panel");
   
   if (projectPanel) projectPanel.classList.remove("hidden");
-  if (calendarPanel) calendarPanel.classList.remove("hidden");
+  if (calendarPanel) calendarPanel.classList.add("hidden");
   if (taskPanel) taskPanel.classList.remove("hidden");
   
   if (gmailPanel) gmailPanel.classList.add("hidden");
@@ -390,11 +393,14 @@ function showAppView() {
   renderProjectList();
   renderCalendar();
   renderTaskPanel();
-  showTodoListView();
+  if (appContent) {
+    appContent.classList.remove("single-column");
+    appContent.classList.remove("todo-layout");
+  }
   initializeReminderService();
 }
 
-function renderAttachmentsPage() {
+async function renderAttachmentsPage() {
   const attachmentsPage = document.getElementById("attachmentsPage");
   const attachmentsList = document.getElementById("attachmentsList");
   const attachmentsMessage = document.getElementById("attachmentsMessage");
@@ -404,11 +410,13 @@ function renderAttachmentsPage() {
   const entries = Object.entries(tasks);
   const attachmentRows = [];
 
+  // ローカルストレージのタスク添付を取得
   entries.forEach(([date, taskItems]) => {
-    taskItems.forEach((task) => {
+    taskItems.forEach((task, taskIndex) => {
       const attachments = task.attachments || [];
-      attachments.forEach((attachment, index) => {
+      attachments.forEach((attachment) => {
         attachmentRows.push({
+          source: 'task',
           date,
           title: task.title || "(タイトルなし)",
           project: task.project || "未設定",
@@ -416,9 +424,26 @@ function renderAttachmentsPage() {
           url: attachment.dataUrl,
           size: attachment.size,
           type: attachment.type,
-          index,
+          taskIndex,
         });
       });
+    });
+  });
+
+  // サーバー保存の資料を取得
+  const serverAttachments = await fetchServerAttachments();
+  serverAttachments.forEach((att) => {
+    attachmentRows.push({
+      source: 'server',
+      date: att.date || '',
+      title: att.taskTitle || '',
+      project: att.project || '',
+      name: att.filename,
+      url: att.filepath,
+      size: att.size || 0,
+      type: att.type || '',
+      createdAt: att.createdAt,
+      filename: att.filename,
     });
   });
 
@@ -428,35 +453,214 @@ function renderAttachmentsPage() {
     return;
   }
 
-  attachmentsMessage.textContent = `全 ${attachmentRows.length} 件の添付資料`; 
+  attachmentsMessage.textContent = `全 ${attachmentRows.length} 件の添付資料`;
   attachmentsList.innerHTML = attachmentRows
     .map(
       (row) =>
         `<li class="attachment-list-item">
           <div class="attachment-info">
-            <div class="attachment-name"><a href="${row.url}" download="${row.name}">${row.name}</a></div>
-            <div class="attachment-meta">${row.date} | ${row.project} | ${row.title}</div>
+            <div class="attachment-name">${row.name}</div>
+            <div class="attachment-meta">${row.date || row.createdAt || ''} | ${row.project || ''} | ${row.taskTitle || ''}</div>
           </div>
-          <div class="attachment-size">${Math.round(row.size / 1024)} KB</div>
+          <div class="attachment-actions">
+            <button type="button" class="download-button" data-filename="${row.name}" data-url="${row.url || ''}" data-source="${row.source}" title="ダウンロード">📥 DL</button>
+            <button type="button" class="delete-button" data-filename="${row.name}" data-source="${row.source}" data-taskdate="${row.date}" data-taskindex="${row.taskIndex}" title="削除">🗑️</button>
+          </div>
+          <div class="attachment-size">${Math.round((row.size || 0) / 1024)} KB</div>
         </li>`
     )
     .join("");
 }
 
-function showTodoListView() {
-  const calendarPanel = document.querySelector(".calendar-panel");
-  if (calendarPanel) {
-    calendarPanel.classList.add("hidden");
+// fetch attachments saved on server
+async function fetchServerAttachments() {
+  if (!currentUser || !currentMode) return [];
+  try {
+    const res = await fetch(`/api/attachments?user=${encodeURIComponent(currentUser)}&mode=${encodeURIComponent(currentMode)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.attachments || [];
+  } catch (e) {
+    console.warn('Failed to fetch server attachments', e);
+    return [];
   }
-  if (appContent) appContent.classList.add("single-column");
+}
+
+async function uploadAttachmentsFromInput() {
+  const input = document.getElementById('attachmentsFileInput');
+  const message = document.getElementById('attachmentsMessage');
+  if (!input || !input.files || input.files.length === 0) {
+    if (message) message.textContent = 'ファイルを選択してください。';
+    return;
+  }
+  if (!currentUser || !currentMode) {
+    if (message) message.textContent = 'ログイン/モードが必要です。';
+    return;
+  }
+  const files = Array.from(input.files);
+  const payloadFiles = await Promise.all(
+    files.map((file) =>
+      new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result || '').toString().split(',')[1] || '';
+          resolve({ name: file.name, type: file.type, base64, size: file.size });
+        };
+        reader.readAsDataURL(file);
+      })
+    )
+  );
+
+  try {
+    const res = await fetch('/api/attachments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: currentUser, mode: currentMode, files: payloadFiles }),
+    });
+    const result = await res.json();
+    if (res.ok) {
+      if (message) message.textContent = `アップロード成功: ${result.files.length} 件`;
+      input.value = '';
+      renderAttachmentsPage();
+    } else {
+      if (message) message.textContent = `アップロード失敗: ${result.error || 'エラー'}`;
+    }
+  } catch (e) {
+    console.error('Upload error', e);
+    if (message) message.textContent = 'アップロード中にエラーが発生しました。';
+  }
+}
+
+async function downloadAttachmentFile(filename, url, source) {
+  if (!currentUser || !currentMode) {
+    alert('ログイン/モードが必要です。');
+    return;
+  }
+
+  if (source === 'task' && url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return;
+  }
+
+  try {
+    const downloadUrl = `/api/download?user=${encodeURIComponent(currentUser)}&mode=${encodeURIComponent(currentMode)}&filename=${encodeURIComponent(filename)}`;
+    const response = await fetch(downloadUrl);
+    if (!response.ok) {
+      const error = await response.json();
+      alert(`ダウンロード失敗: ${error.error || 'エラー'}`);
+      return;
+    }
+    const blob = await response.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    console.error('Download error', e);
+    alert('ダウンロード中にエラーが発生しました。');
+  }
+}
+
+async function deleteAttachmentFile(filename) {
+  if (!currentUser || !currentMode) {
+    alert('ログイン/モードが必要です。');
+    return;
+  }
+  if (!confirm(`「${filename}」を削除しますか？`)) return;
+  try {
+    const url = `/api/attachments?user=${encodeURIComponent(currentUser)}&mode=${encodeURIComponent(currentMode)}&filename=${encodeURIComponent(filename)}`;
+    const response = await fetch(url, { method: 'DELETE' });
+    if (!response.ok) {
+      const error = await response.json();
+      alert(`削除失敗: ${error.error || 'エラー'}`);
+      return;
+    }
+    alert(`「${filename}」を削除しました。`);
+    renderAttachmentsPage();
+  } catch (e) {
+    console.error('Delete error', e);
+    alert('削除中にエラーが発生しました。');
+  }
+}
+
+// attach upload handlers when attachments page loads
+document.addEventListener('DOMContentLoaded', () => {
+  const uploadBtn = document.getElementById('uploadAttachmentsButton');
+  if (uploadBtn) uploadBtn.addEventListener('click', uploadAttachmentsFromInput);
+  
+  const attachmentsList = document.getElementById('attachmentsList');
+  if (attachmentsList) {
+    attachmentsList.addEventListener('click', (e) => {
+      const downloadBtn = e.target.closest('.download-button');
+      if (downloadBtn) {
+        const filename = downloadBtn.getAttribute('data-filename');
+        const url = downloadBtn.getAttribute('data-url');
+        const source = downloadBtn.getAttribute('data-source');
+        if (filename) downloadAttachmentFile(filename, url, source);
+        return;
+      }
+      const deleteBtn = e.target.closest('.delete-button');
+      if (deleteBtn) {
+        const filename = deleteBtn.getAttribute('data-filename');
+        const source = deleteBtn.getAttribute('data-source');
+        const taskdate = deleteBtn.getAttribute('data-taskdate');
+        const taskindex = Number(deleteBtn.getAttribute('data-taskindex'));
+        if (source === 'task') {
+          deleteTaskAttachmentFromList(filename, taskdate, taskindex);
+        } else {
+          deleteAttachmentFile(filename);
+        }
+      }
+    });
+  }
+});
+
+async function deleteTaskAttachmentFromList(filename, date, taskIndex) {
+  if (!confirm(`「${filename}」を削除しますか？`)) return;
+  try {
+    const tasks = getTasks();
+    const taskItems = tasks[date];
+    if (!taskItems || !taskItems[taskIndex]) return;
+    const task = taskItems[taskIndex];
+    task.attachments = (task.attachments || []).filter((att) => att.name !== filename);
+    saveTasks(tasks);
+    alert(`「${filename}」を削除しました。`);
+    renderAttachmentsPage();
+  } catch (e) {
+    console.error('Delete task attachment error', e);
+    alert('削除中にエラーが発生しました。');
+  }
+}
+
+function showTodoListView() {
+  const projectPanel = document.querySelector(".project-panel");
+  const calendarPanel = document.querySelector(".calendar-panel");
+  const taskPanel = document.querySelector(".task-panel");
+
+  if (projectPanel) projectPanel.classList.remove("hidden");
+  if (taskPanel) taskPanel.classList.remove("hidden");
+  if (calendarPanel) calendarPanel.classList.add("hidden");
+  
+  // モーダルを閉じる
+  hideDailyScheduleModal();
 }
 
 function showCalendarView() {
+  const projectPanel = document.querySelector(".project-panel");
   const calendarPanel = document.querySelector(".calendar-panel");
-  if (calendarPanel) {
-    calendarPanel.classList.remove("hidden");
-  }
-  appContent.classList.remove("single-column");
+  const taskPanel = document.querySelector(".task-panel");
+
+  if (projectPanel) projectPanel.classList.add("hidden");
+  if (taskPanel) taskPanel.classList.add("hidden");
+  if (calendarPanel) calendarPanel.classList.remove("hidden");
 }
 
 function showTaskRegistrationView() {
@@ -476,6 +680,7 @@ function showTaskRegistrationView() {
   if (taskEndInput) taskEndInput.value = "";
   if (taskProjectSelect) taskProjectSelect.value = "個人";
   if (taskPrioritySelect) taskPrioritySelect.value = "normal";
+  currentTaskAttachments = [];
   if (taskAttachmentInput) taskAttachmentInput.value = "";
   if (taskAttachmentList) taskAttachmentList.innerHTML = "";
   if (voiceInputStatus) voiceInputStatus.textContent = "";
@@ -1088,11 +1293,9 @@ async function loadGmailMessages() {
     });
 
     const messages = response.result.messages || [];
-    const listContainer = gmailList;
-    listContainer.innerHTML = "";
 
     if (messages.length === 0) {
-      listContainer.innerHTML = "<p>受信トレイにメールがありません。</p>";
+      if (gmailList) gmailList.innerHTML = "<p>受信トレイにメールがありません。</p>";
       return;
     }
 
@@ -1110,7 +1313,9 @@ async function loadGmailMessages() {
       const date = headers.find((h) => h.name === "Date")?.value || "";
       const bodyText = getMessageBody(payload) || messageData.result.snippet || "(本文なし)";
       
-      // メッセージデータを整形して保存
+      const searchText = `${subject} ${from} ${date} ${bodyText} ${messageData.result.snippet || ""} ${(payload.headers || [])
+        .map((h) => h.value || "")
+        .join(" ")}`;
       const cachedMessage = {
         id: message.id,
         subject,
@@ -1119,7 +1324,8 @@ async function loadGmailMessages() {
         bodyText,
         payload: payload,
         snippet: messageData.result.snippet,
-        fullData: messageData.result
+        fullData: messageData.result,
+        searchText,
       };
       
       gmailMessageCache[message.id] = cachedMessage;
@@ -1127,25 +1333,75 @@ async function loadGmailMessages() {
         subject,
         from,
         date,
-        bodyText: bodyText.substring(0, 50)
+        bodyText: bodyText.substring(0, 50),
+        searchText: searchText.substring(0, 80),
       });
+    }
 
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "gmail-item gmail-item-button";
-      item.dataset.messageId = message.id;
-      item.innerHTML = `
-        <h3>${escapeHtml(subject)}</h3>
-        <p><strong>From:</strong> ${escapeHtml(from)}</p>
-        <small>${escapeHtml(date)}</small>
-      `;
-      item.addEventListener("click", () => showGmailDetail(message.id));
-      listContainer.appendChild(item);
+    if (getGmailSearchWords().length) {
+      filterGmailMessages();
+    } else {
+      renderGmailList();
     }
   } catch (error) {
     updateGmailStatus("Gmail メッセージの取得に失敗しました。", "error");
     console.error(error);
   }
+}
+
+function getGmailSearchWords() {
+  const value = gmailSearchInput?.value?.trim() || "";
+  const words = value
+    .split(/\s+/)
+    .map((word) => word.toLowerCase())
+    .filter(Boolean);
+  console.log("Gmail search words:", words, "raw:", value);
+  return words;
+}
+
+function gmailMessageMatches(message, words) {
+  if (!words.length) return true;
+  const text = (message.searchText || `${message.subject || ""} ${message.from || ""} ${message.bodyText || ""} ${message.snippet || ""} ${message.date || ""}`)
+    .toLowerCase();
+  return words.every((word) => text.includes(word));
+}
+
+function renderGmailList(messages = null) {
+  if (!gmailList) return;
+  const allMessages = messages || Object.values(gmailMessageCache);
+  gmailList.innerHTML = "";
+
+  if (allMessages.length === 0) {
+    const query = gmailSearchInput?.value?.trim();
+    gmailList.innerHTML = query ? "<p>検索結果がありません。</p>" : "<p>受信トレイにメールがありません。</p>";
+    return;
+  }
+
+  allMessages.forEach((message) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "gmail-item gmail-item-button";
+    item.dataset.messageId = message.id;
+    item.innerHTML = `
+      <h3>${escapeHtml(message.subject)}</h3>
+      <p><strong>From:</strong> ${escapeHtml(message.from)}</p>
+      <small>${escapeHtml(message.date)}</small>
+    `;
+    item.addEventListener("click", () => showGmailDetail(message.id));
+    gmailList.appendChild(item);
+  });
+}
+
+function filterGmailMessages() {
+  const words = getGmailSearchWords();
+  const messages = Object.values(gmailMessageCache).filter((message) => gmailMessageMatches(message, words));
+  console.log("Gmail filter result count:", messages.length);
+  if (words.length === 0) {
+    updateGmailStatus("検索キーワードが空です。すべてのメールを表示しています。", "info");
+  } else {
+    updateGmailStatus(`検索ワード: ${words.join(" ")} → ${messages.length} 件`, "success");
+  }
+  renderGmailList(messages);
 }
 
 function updateUserState() {
@@ -1467,6 +1723,8 @@ function startEditTask(dateKey, taskIndex) {
   if (taskEntryPanel) taskEntryPanel.classList.remove("hidden");
   if (showTaskRegisterButton) showTaskRegisterButton.classList.add("hidden");
 
+  currentTaskAttachments = task.attachments ? JSON.parse(JSON.stringify(task.attachments)) : [];
+
   // フォームにタスク情報を埋める
   if (taskDateInput) taskDateInput.value = dateKey;
   if (taskTitleInput) taskTitleInput.value = task.title || "";
@@ -1476,7 +1734,7 @@ function startEditTask(dateKey, taskIndex) {
   if (taskProjectSelect) taskProjectSelect.value = task.project || "個人";
   if (taskPrioritySelect) taskPrioritySelect.value = task.priority || "normal";
   if (taskAttachmentInput) taskAttachmentInput.value = "";
-  if (taskAttachmentList) renderTaskAttachmentList(task.attachments || []);
+  if (taskAttachmentList) renderTaskAttachmentList(currentTaskAttachments || []);
   if (voiceInputStatus) voiceInputStatus.textContent = "";
   if (startVoiceInputButton) {
     startVoiceInputButton.textContent = "🎙 音声入力";
@@ -1508,12 +1766,49 @@ function renderTaskAttachmentList(attachments) {
 
   taskAttachmentList.innerHTML = attachments
     .map(
-      (attachment) =>
-        `<div class="attachment-item"><span>${attachment.name}</span> <small>${Math.round(
-          attachment.size / 1024
-        )} KB</small></div>`
+      (attachment, index) =>
+        `<div class="attachment-item">
+          <a href="${attachment.dataUrl}" download="${attachment.name}" class="attachment-link">${attachment.name}</a>
+          <small>${Math.round(attachment.size / 1024)} KB</small>
+          <button type="button" class="attachment-remove-button" data-index="${index}">削除</button>
+        </div>`
     )
     .join("");
+}
+
+function removeTaskAttachment(index) {
+  currentTaskAttachments.splice(index, 1);
+  renderTaskAttachmentList(currentTaskAttachments);
+}
+
+async function appendTaskAttachments(files) {
+  if (!files || files.length === 0) return;
+  const attachments = await readAttachments(files);
+  currentTaskAttachments = currentTaskAttachments.concat(attachments);
+  renderTaskAttachmentList(currentTaskAttachments);
+  if (taskAttachmentInput) taskAttachmentInput.value = "";
+}
+
+function initializeTaskAttachmentEvents() {
+  if (taskAttachmentInput) {
+    taskAttachmentInput.addEventListener("change", async (event) => {
+      const files = event.target.files;
+      if (files && files.length > 0) {
+        await appendTaskAttachments(files);
+      }
+    });
+  }
+
+  if (taskAttachmentList) {
+    taskAttachmentList.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest(".attachment-remove-button");
+      if (!removeBtn) return;
+      const index = Number(removeBtn.getAttribute("data-index"));
+      if (!Number.isNaN(index)) {
+        removeTaskAttachment(index);
+      }
+    });
+  }
 }
 
 function readAttachments(files) {
@@ -1545,7 +1840,7 @@ async function addTask() {
   const endTime = taskEndInput?.value || "";
   const project = taskProjectSelect?.value || "未設定";
   const priority = taskPrioritySelect?.value || "normal";
-  const newAttachments = taskAttachmentInput?.files && taskAttachmentInput.files.length > 0 ? await readAttachments(taskAttachmentInput.files) : null;
+  const newAttachments = currentTaskAttachments;
 
   if (!title) {
     alert("タイトルを入力してください。");
@@ -1835,10 +2130,15 @@ function renderDailyScheduleModal(dateKey) {
 
 function showDailyScheduleModal(date) {
   const modal = document.getElementById("dailyScheduleModal");
-  if (!modal) return;
+  if (!modal) {
+    console.log("Error: dailyScheduleModal element not found");
+    return;
+  }
   const key = formatDateKey(date instanceof Date ? date : new Date(date));
+  console.log("Opening daily schedule modal for:", key);
   renderDailyScheduleModal(key);
   modal.classList.remove("hidden");
+  console.log("Modal visible:", !modal.classList.contains("hidden"));
 }
 
 function hideDailyScheduleModal() {
@@ -1862,13 +2162,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const addBtn = document.getElementById("dailyScheduleAddButton");
   const modal = document.getElementById("dailyScheduleModal");
   if (closeBtn) closeBtn.addEventListener("click", () => hideDailyScheduleModal());
-  if (modal) modal.addEventListener("click", (e) => {
-    if (e.target === modal) hideDailyScheduleModal();
-  });
+  if (modal) {
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) hideDailyScheduleModal();
+    });
+  }
   if (addBtn) addBtn.addEventListener("click", () => {
-    // モーダルを閉じてタスク登録モーダルを開く
     hideDailyScheduleModal();
-    // selectedDate は既に設定されているはずだが念のため taskDateInput を更新
     if (taskDateInput) taskDateInput.value = formatDateKey(selectedDate);
     showTaskRegistrationView();
   });
@@ -2115,6 +2418,27 @@ if (gmailRefreshButton) {
   gmailRefreshButton.addEventListener("click", loadGmailMessages);
 }
 
+if (gmailSearchButton) {
+  gmailSearchButton.addEventListener("click", async () => {
+    if (!Object.keys(gmailMessageCache).length) {
+      await loadGmailMessages();
+    }
+    filterGmailMessages();
+  });
+}
+
+if (gmailSearchInput) {
+  gmailSearchInput.addEventListener("keyup", async (event) => {
+    if (event.key === "Enter") {
+      if (!Object.keys(gmailMessageCache).length) {
+        await loadGmailMessages();
+      }
+      filterGmailMessages();
+    }
+  });
+  gmailSearchInput.addEventListener("input", filterGmailMessages);
+}
+
 if (gmailCreateTaskButton) {
   gmailCreateTaskButton.addEventListener("click", createTaskFromEmail);
 }
@@ -2151,6 +2475,8 @@ if (privateModeButton) {
     window.location.href = "app.html";
   });
 }
+
+initializeTaskAttachmentEvents();
 
 if (businessModeButton) {
   businessModeButton.addEventListener("click", () => {
@@ -2258,7 +2584,7 @@ async function initialize() {
     await loadProjectsFromServer(currentUser, currentMode);
     await loadTasksFromServer(currentUser, currentMode);
     updateUserState();
-    renderAttachmentsPage();
+    await renderAttachmentsPage();
     return;
   }
 

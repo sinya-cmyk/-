@@ -60,8 +60,15 @@
         return;
       }
       try{
-        const res = await fetch(`${serverBase}/api/logs`);
-        if(!res.ok) throw new Error(`status:${res.status}`);
+        const url = `${serverBase}/api/logs`;
+        console.log('リクエストURL:', url);
+        const res = await fetch(url);
+        console.log('レスポンスステータス:', res.status, res.statusText);
+        if(!res.ok) {
+          const text = await res.text();
+          console.error('エラーレスポンス:', text);
+          throw new Error(`status:${res.status} - ${res.statusText}`);
+        }
         const items = await res.json();
         if(items.length===0){ serverContainer.innerHTML = '<p class="empty-state">ログはありません。</p>'; return; }
         const sorted = items.slice().sort((a,b)=>new Date(b.timestamp) - new Date(a.timestamp));

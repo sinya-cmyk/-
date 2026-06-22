@@ -22,36 +22,6 @@
     </header>
 
     <main id="appContent">
-      <section class="project-panel">
-        <div class="panel-header">
-          <h2>プロジェクト一覧</h2>
-        </div>
-        <ul class="project-list" id="projectList"></ul>
-        <div class="project-form">
-          <label>
-            新規プロジェクト名
-            <input id="newProjectName" type="text" placeholder="新しいプロジェクト名を入力">
-          </label>
-          <button id="createProjectButton" type="button" class="full-width">＋ プロジェクトを作成</button>
-        </div>
-      </section>
-
-      <section class="calendar-panel">
-        <div class="calendar-header">
-          <button id="prevMonth" type="button">前</button>
-          <div>
-            <h2 id="monthLabel"></h2>
-            <p id="yearLabel"></p>
-          </div>
-          <div class="calendar-actions">
-            <button id="showTodoListViewButton" type="button" class="secondary-button">TO DOリストへ</button>
-            <button id="nextMonth" type="button">次</button>
-          </div>
-        </div>
-
-        <div class="calendar-grid" id="calendarGrid"></div>
-      </section>
-
       <section class="task-panel">
         <div class="task-header">
           <div>
@@ -68,101 +38,112 @@
           </div>
         </div>
 
-        <div id="taskEntryPanel" class="task-modal-overlay hidden">
-          <div class="task-modal">
-            <div class="task-modal-header">
-              <div>
-                <h2>新規タスクの追加</h2>
-                <p class="task-modal-subtitle">日付・開始時刻・終了時刻・プロジェクト・タイトル・詳細を入力してください。</p>
-              </div>
-              <button id="cancelTaskButton" type="button" class="modal-close-button">✕</button>
-            </div>
-            <div class="task-form grid">
-              <div class="form-row">
-                <div>
-                  <label>
-                    日付
-                    <input id="taskDateInput" type="date">
-                  </label>
-                  <button id="startVoiceDateInputButton" type="button" class="voice-button">🎙</button>
-                  <div id="voiceDateInputStatus" class="voice-status"></div>
-                </div>
-                <div>
-                  <label>
-                    開始時刻
-                    <input id="taskStartInput" type="time">
-                  </label>
-                  <button id="startVoiceStartTimeInputButton" type="button" class="voice-button">🎙</button>
-                  <div id="voiceStartTimeInputStatus" class="voice-status"></div>
-                </div>
-                <div>
-                  <label>
-                    終了時刻
-                    <input id="taskEndInput" type="time">
-                  </label>
-                  <button id="startVoiceEndTimeInputButton" type="button" class="voice-button">🎙</button>
-                  <div id="voiceEndTimeInputStatus" class="voice-status"></div>
-                </div>
-              </div>
-              <div class="form-row">
-                <label>
-                  プロジェクト
-                  <select id="taskProjectSelect"></select>
-                </label>
-                <label>
-                  優先度
-                  <select id="taskPrioritySelect">
-                    <option value="low">低</option>
-                    <option value="normal" selected>通常</option>
-                    <option value="high">高</option>
-                    <option value="urgent">緊急</option>
-                  </select>
-                </label>
-              </div>
-              <label class="full-width">
-                添付資料
-                <input id="taskAttachmentInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple>
-              </label>
-              <div id="taskAttachmentList" class="attachment-list"></div>
-              <div class="form-row task-title-row">
-                <label class="full-width">
-                  タイトル
-                  <div class="voice-input-row">
-                    <input id="taskTitleInput" type="text" placeholder="タイトルを入力" maxlength="120">
-                    <button id="startVoiceInputButton" type="button" class="voice-button">🎙 音声入力</button>
-                  </div>
-                  <div id="voiceInputStatus" class="voice-status"></div>
-                </label>
-              </div>
-              <label class="wide">
-                詳細
-                <textarea id="taskDetailInput" placeholder="詳細を入力" rows="3"></textarea>
-              </label>
-              <button id="addTaskButton" type="button" class="full-width">追加</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 日別スケジュール表示モーダル -->
-        <div id="dailyScheduleModal" class="daily-schedule-modal-overlay hidden">
-          <div class="daily-schedule-modal">
-            <div class="daily-schedule-header">
-              <div>
-                <h2 id="dailyScheduleDateLabel">日付</h2>
-                <p>その日のスケジュール一覧</p>
-              </div>
-              <div class="daily-schedule-actions">
-                <button id="dailyScheduleAddButton" type="button" class="secondary-button">新規タスク追加</button>
-                <button id="dailyScheduleCloseButton" type="button" class="modal-close-button">✕</button>
-              </div>
-            </div>
-            <div id="dailyScheduleList" class="daily-schedule-list"></div>
-          </div>
-        </div>
-
         <ul class="task-list" id="taskList"></ul>
       </section>
 
+      <section class="project-panel">
+        <div class="panel-header">
+          <h2>プロジェクト一覧</h2>
+        </div>
+        <ul class="project-list" id="projectList"></ul>
+        <div class="project-form">
+          <label>
+            新規プロジェクト名
+            <input id="newProjectName" type="text" placeholder="新しいプロジェクト名を入力">
+          </label>
+          <button id="createProjectButton" type="button" class="full-width">＋ プロジェクトを作成</button>
+        </div>
+      </section>
+      <section class="calendar-panel hidden">
+        <div class="calendar-header">
+          <button id="prevMonth" type="button">前</button>
+          <div>
+            <h2 id="monthLabel"></h2>
+            <p id="yearLabel"></p>
+          </div>
+          <div class="calendar-actions">
+            <button id="showTodoListViewButton" type="button" class="secondary-button">TO DOリストへ</button>
+            <button id="nextMonth" type="button">次</button>
+          </div>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </section>
+      <div id="taskEntryPanel" class="task-modal-overlay hidden">
+        <div class="task-modal">
+          <div class="task-modal-header">
+            <div>
+              <h2>新規タスクの追加</h2>
+              <p class="task-modal-subtitle">日付・開始時刻・終了時刻・プロジェクト・タイトル・詳細を入力してください。</p>
+            </div>
+            <button id="cancelTaskButton" type="button" class="modal-close-button">✕</button>
+          </div>
+          <div class="task-form grid">
+            <div class="form-row">
+              <div>
+                <label>
+                  日付
+                  <input id="taskDateInput" type="date">
+                </label>
+                <button id="startVoiceDateInputButton" type="button" class="voice-button">🎙</button>
+                <div id="voiceDateInputStatus" class="voice-status"></div>
+              </div>
+              <div>
+                <label>
+                  開始時刻
+                  <input id="taskStartInput" type="time">
+                </label>
+                <button id="startVoiceStartTimeInputButton" type="button" class="voice-button">🎙</button>
+                <div id="voiceStartTimeInputStatus" class="voice-status"></div>
+              </div>
+              <div>
+                <label>
+                  終了時刻
+                  <input id="taskEndInput" type="time">
+                </label>
+                <button id="startVoiceEndTimeInputButton" type="button" class="voice-button">🎙</button>
+                <div id="voiceEndTimeInputStatus" class="voice-status"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>
+                プロジェクト
+                <select id="taskProjectSelect"></select>
+              </label>
+              <label>
+                優先度
+                <select id="taskPrioritySelect">
+                  <option value="low">低</option>
+                  <option value="normal" selected>通常</option>
+                  <option value="high">高</option>
+                  <option value="urgent">緊急</option>
+                </select>
+              </label>
+            </div>
+            <label class="full-width">
+              添付資料
+              <input id="taskAttachmentInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple>
+            </label>
+            <div id="taskAttachmentList" class="attachment-list"></div>
+            <div class="form-row task-title-row">
+              <label class="full-width">
+                タイトル
+                <div class="voice-input-row">
+                  <input id="taskTitleInput" type="text" placeholder="タスクタイトルを入力">
+                  <button id="startVoiceInputButton" type="button" class="voice-button">🎙</button>
+                </div>
+              </label>
+            </div>
+            <label class="full-width">
+              詳細
+              <textarea id="taskDetailInput" rows="4" placeholder="タスクの詳細を入力"></textarea>
+            </label>
+            <div class="form-row task-actions-row">
+              <button id="addTaskButton" type="button" class="secondary-button">追加</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <section id="gmailPanel" class="gmail-panel hidden">
         <div class="gmail-header">
           <div>
@@ -173,6 +154,10 @@
             <button id="gmailAuthorizeButton" type="button" class="secondary-button">Gmailに接続</button>
             <button id="gmailRefreshButton" type="button" class="secondary-button">更新</button>
             <button id="backToTasksButton" type="button" class="secondary-button">タスクに戻る</button>
+          </div>
+          <div class="gmail-search-row">
+            <input id="gmailSearchInput" type="text" placeholder="検索ワード（スペース区切り）" />
+            <button id="gmailSearchButton" type="button" class="secondary-button">検索</button>
           </div>
         </div>
         <div id="gmailDetailPanel" class="gmail-detail-panel hidden">
@@ -192,6 +177,21 @@
         </div>
         <div class="gmail-list" id="gmailList"></div>
       </section>
+      <div id="dailyScheduleModal" class="daily-schedule-modal-overlay hidden">
+        <div class="daily-schedule-modal">
+          <div class="daily-schedule-header">
+            <div>
+              <h2 id="dailyScheduleDateLabel">日付</h2>
+              <p>その日のスケジュール一覧</p>
+            </div>
+            <div class="daily-schedule-actions">
+              <button id="dailyScheduleAddButton" type="button" class="secondary-button">新規タスク追加</button>
+              <button id="dailyScheduleCloseButton" type="button" class="modal-close-button">✕</button>
+            </div>
+          </div>
+          <div id="dailyScheduleList" class="daily-schedule-list"></div>
+        </div>
+      </div>
     </main>
   </div>
 

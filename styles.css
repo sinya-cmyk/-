@@ -179,15 +179,10 @@ header p {
   display: none !important;
 }
 
-main.single-column {
-  grid-template-columns: 1fr;
-}
-
 main {
   display: grid;
   gap: 24px;
-  /* 中央のカレンダー列を広くする */
-  grid-template-columns: 0.9fr 3fr 0.9fr;
+  grid-template-columns: 1fr;
 }
 
 .project-panel,
@@ -348,6 +343,19 @@ main {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.gmail-search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.gmail-search-row input {
+  flex: 1;
+  min-width: 180px;
 }
 
 .gmail-status {
@@ -814,6 +822,24 @@ main {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.attachment-remove-button {
+  padding: 6px 10px;
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.attachment-remove-button:hover {
+  background: #dc2626;
 }
 
 .task-attachments {
@@ -859,8 +885,8 @@ main {
 }
 
 .attachment-list-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 16px;
   padding: 16px;
@@ -892,6 +918,53 @@ main {
 .attachment-size {
   font-size: 0.9rem;
   color: #334155;
+}
+
+.attachment-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.download-button {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.download-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+..download-button:active {
+  transform: translateY(0);
+}
+
+.delete-button {
+  padding: 8px 16px;
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.delete-button:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+.delete-button:active {
+  transform: translateY(0);
 }
 
 .task-modal-overlay {
