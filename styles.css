@@ -186,9 +186,7 @@ main {
 }
 
 body.app-page header {
-  position: sticky;
-  top: 0;
-  z-index: 1200;
+  /* header は固定しない（スクロール可） */
   background: linear-gradient(180deg, #ffffffcc, #ffffff);
   backdrop-filter: blur(6px);
 }
@@ -200,8 +198,7 @@ body.app-page .top-selector-panel {
   box-shadow: var(--shadow);
   display: grid;
   gap: 16px;
-  position: sticky;
-  z-index: 1100;
+  /* スクロールで消えるよう固定指定はしない */
 }
 
 .top-selector-row {

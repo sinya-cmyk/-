@@ -2756,9 +2756,7 @@ async function initialize() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  try {
-    setupStickyHeader();
-  } catch (e) {}
+  // Sticky header behavior disabled: top bar scrolls with page
 });
 
 initialize();
