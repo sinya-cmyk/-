@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ログ閲覧</title>
+  <link rel="stylesheet" href="styles.css">
   <style>
     body{
       font-family:system-ui, -apple-system, "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
@@ -49,8 +50,12 @@
     </div>
   </div>
 
+  <script src="app.js"></script>
   <script>
     const serverContainer = document.getElementById('serverLogs');
+    if (typeof updateTopToolbarActiveTab === 'function') {
+      updateTopToolbarActiveTab('logs');
+    }
     const origin = window.location.origin;
     const serverBase = origin && origin !== 'null' ? origin : 'http://localhost:8000';
     async function loadServerLogs(){

@@ -71,6 +71,12 @@ const gmailCreateTaskButton = document.getElementById("gmailCreateTaskButton");
 const gmailDetailCloseButton = document.getElementById("gmailDetailCloseButton");
 const backToTasksButton = document.getElementById("backToTasksButton");
 const backToModeButton = document.getElementById("backToModeButton");
+const topBackToModeButton = document.getElementById("topBackToModeButton");
+const topBackToAppButton = document.getElementById("topBackToAppButton");
+const pageSelect = document.getElementById("pageSelect");
+const featureSelect = document.getElementById("featureSelect");
+const topShowTaskRegisterButton = document.getElementById("topShowTaskRegisterButton");
+const topTabButtons = document.querySelectorAll(".page-tabs .tab");
 
 const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
 const GMAIL_CLIENT_ID = "1050642169375-e8c5q5iiie1i3epu7qfb2f4v3ane2vtl.apps.googleusercontent.com";
@@ -387,6 +393,7 @@ function showAppView() {
   if (calendarPanel) calendarPanel.classList.add("hidden");
   if (taskPanel) taskPanel.classList.remove("hidden");
   
+  if (gmailPanel) appContent.classList.remove("hidden");
   if (gmailPanel) gmailPanel.classList.add("hidden");
   
   hideTaskRegistrationView();
@@ -398,6 +405,7 @@ function showAppView() {
     appContent.classList.remove("todo-layout");
   }
   initializeReminderService();
+  updateTopToolbarActiveTab("todo");
 }
 
 async function renderAttachmentsPage() {
@@ -405,6 +413,8 @@ async function renderAttachmentsPage() {
   const attachmentsList = document.getElementById("attachmentsList");
   const attachmentsMessage = document.getElementById("attachmentsMessage");
   if (!attachmentsPage || !attachmentsList || !attachmentsMessage) return;
+
+  updateTopToolbarActiveTab("attachments");
 
   const tasks = getTasks();
   const entries = Object.entries(tasks);
@@ -648,9 +658,29 @@ function showTodoListView() {
   if (projectPanel) projectPanel.classList.remove("hidden");
   if (taskPanel) taskPanel.classList.remove("hidden");
   if (calendarPanel) calendarPanel.classList.add("hidden");
-  
-  // モーダルを閉じる
+  if (gmailPanel) gmailPanel.classList.add("hidden");
+  if (gmailDetailPanel) gmailDetailPanel.classList.add("hidden");
+
   hideDailyScheduleModal();
+  clearGmailDetail();
+  updateTopToolbarActiveTab("todo");
+}
+
+function showProjectListView() {
+  const projectPanel = document.querySelector(".project-panel");
+  const calendarPanel = document.querySelector(".calendar-panel");
+  const taskPanel = document.querySelector(".task-panel");
+
+  if (projectPanel) projectPanel.classList.remove("hidden");
+  if (calendarPanel) calendarPanel.classList.add("hidden");
+  if (taskPanel) taskPanel.classList.add("hidden");
+  if (gmailPanel) gmailPanel.classList.add("hidden");
+  if (gmailDetailPanel) gmailDetailPanel.classList.add("hidden");
+
+  renderProjectList();
+  hideDailyScheduleModal();
+  clearGmailDetail();
+  updateTopToolbarActiveTab("projects");
 }
 
 function showCalendarView() {
@@ -661,6 +691,7 @@ function showCalendarView() {
   if (projectPanel) projectPanel.classList.add("hidden");
   if (taskPanel) taskPanel.classList.add("hidden");
   if (calendarPanel) calendarPanel.classList.remove("hidden");
+  updateTopToolbarActiveTab("calendar");
 }
 
 function showTaskRegistrationView() {
@@ -809,6 +840,7 @@ async function showGmailView() {
     gmailPanel.classList.remove("hidden");
     console.log("gmailPanel classList:", gmailPanel.classList);
   }
+  updateTopToolbarActiveTab("gmail");
 
   if (gmailAuthorizeButton) {
     console.log("Setting gmailAuthorizeButton display");
@@ -2468,6 +2500,126 @@ if (backToModeButton) {
   });
 }
 
+function updateTopToolbarActiveTab(view) {
+  if (pageSelect) {
+    pageSelect.value = view;
+  }
+  topTabButtons.forEach((tab) => {
+    if (tab.dataset.view === view) {
+      tab.classList.add("active");
+    } else {
+      tab.classList.remove("active");
+    }
+  });
+}
+
+function bindTopTabButtons() {
+  topTabButtons.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const view = tab.dataset.view;
+      if (view === "todo") {
+        showTodoListView();
+      } else if (view === "calendar") {
+        showCalendarView();
+        renderCalendar();
+      } else if (view === "gmail") {
+        showGmailView();
+      } else if (view === "projects") {
+        showProjectListView();
+      } else if (view === "attachments") {
+        window.location.href = "attachments.html";
+      } else if (view === "logs") {
+        window.location.href = "logs.html";
+      }
+      updateTopToolbarActiveTab(view);
+    });
+  });
+}
+
+function setupStickyHeader() {
+  if (!document.body.classList.contains('app-page')) return;
+
+  const headerEl = document.querySelector('header');
+  const topSel = document.querySelector('.top-selector-panel');
+  if (!headerEl || !topSel) return;
+
+  try {
+    headerEl.style.position = 'sticky';
+    headerEl.style.top = '0px';
+    headerEl.style.zIndex = '1200';
+    headerEl.style.background = headerEl.style.background || 'linear-gradient(180deg, #ffffffcc, #ffffff)';
+
+    const hdrHeight = headerEl.getBoundingClientRect().height;
+    topSel.style.position = 'sticky';
+    topSel.style.top = `${Math.ceil(hdrHeight)}px`;
+    topSel.style.zIndex = '1100';
+  } catch (e) {
+    console.warn('setupStickyHeader error', e);
+  }
+
+  window.addEventListener('resize', () => {
+    try {
+      const hdrHeight = headerEl.getBoundingClientRect().height;
+      topSel.style.top = `${Math.ceil(hdrHeight)}px`;
+    } catch (e) {}
+  });
+}
+
+if (pageSelect) {
+  pageSelect.addEventListener("change", (event) => {
+    const value = event.target.value;
+    if (value === "todo") {
+      showTodoListView();
+    } else if (value === "calendar") {
+      showCalendarView();
+      renderCalendar();
+    } else if (value === "gmail") {
+      showGmailView();
+    } else if (value === "projects") {
+      showProjectListView();
+    } else if (value === "attachments") {
+      window.location.href = "attachments.html";
+    } else if (value === "logs") {
+      window.location.href = "logs.html";
+    }
+    updateTopToolbarActiveTab(value);
+  });
+}
+
+if (featureSelect) {
+  featureSelect.addEventListener("change", (event) => {
+    const value = event.target.value;
+    if (value === "addTask") {
+      showTaskRegistrationView();
+    } else if (value === "showGmail") {
+      showGmailView();
+    } else if (value === "showCalendar") {
+      showCalendarView();
+      renderCalendar();
+    }
+    featureSelect.value = "none";
+  });
+}
+
+if (topShowTaskRegisterButton) {
+  topShowTaskRegisterButton.addEventListener("click", showTaskRegistrationView);
+}
+
+if (topBackToModeButton) {
+  topBackToModeButton.addEventListener("click", () => {
+    clearMode();
+    window.location.href = "mode.html";
+  });
+}
+
+if (topBackToAppButton) {
+  topBackToAppButton.addEventListener("click", () => {
+    window.location.href = "app.html";
+  });
+}
+
+bindTopTabButtons();
+
 if (privateModeButton) {
   privateModeButton.addEventListener("click", () => {
     currentMode = "private";
@@ -2588,9 +2740,25 @@ async function initialize() {
     return;
   }
 
+  if (page === "logs.html") {
+    // ログページではフル初期化は不要。トップバーだけ有効化して終了する。
+    try {
+      if (typeof updateTopToolbarActiveTab === "function") updateTopToolbarActiveTab("logs");
+    } catch (e) {
+      console.warn('トップバー更新エラー', e);
+    }
+    return;
+  }
+
   // デフォルトはログイン画面
   showView(false);
   showLoginForm();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    setupStickyHeader();
+  } catch (e) {}
+});
 
 initialize();

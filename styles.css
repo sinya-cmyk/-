@@ -185,6 +185,86 @@ main {
   grid-template-columns: 1fr;
 }
 
+body.app-page header {
+  position: sticky;
+  top: 0;
+  z-index: 1200;
+  background: linear-gradient(180deg, #ffffffcc, #ffffff);
+  backdrop-filter: blur(6px);
+}
+
+body.app-page .top-selector-panel {
+  background: var(--surface);
+  border-radius: 24px;
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  z-index: 1100;
+}
+
+.top-selector-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.page-tabs .tab {
+  border: none;
+  background: #e5e7eb;
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.page-tabs .tab.active,
+.page-tabs .tab:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.top-selector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.toolbar-select {
+  display: grid;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.toolbar-select select {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+.top-selector-filters {
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+/* main の上部に余白を確保（header + top-selector の重なり対策） */
+main.content-with-sticky-padding {
+  padding-top: 18px;
+}
+
 .project-panel,
 .calendar-panel,
 .task-panel {
@@ -942,7 +1022,7 @@ main {
   transform: translateY(-1px);
 }
 
-..download-button:active {
+.download-button:active {
   transform: translateY(0);
 }
 
