@@ -67,6 +67,9 @@
         if(!res.ok) {
           const text = await res.text();
           console.error('エラーレスポンス:', text);
+          if (res.status === 404) {
+            return loadLocalLogs('API が見つかりませんでした。logs.jsonl からログを読み込みます。');
+          }
           throw new Error(`status:${res.status} - ${res.statusText}`);
         }
         const items = await res.json();
@@ -77,6 +80,42 @@
         console.error('loadServerLogs error', e);
         serverContainer.innerHTML = `<p class="empty-state">取得に失敗しました。サーバが起動しているか確認してください。<br>エラー: ${escapeHtml(e.message)}</p>`;
       }
+    }
+
+    async function loadLocalLogs(message) {
+      serverContainer.innerHTML = `<p class="empty-state">${escapeHtml(message)}</p>`;
+      try {
+        const res = await fetch('logs.jsonl');
+        if (!res.ok) {
+          throw new Error(`logs.jsonl の取得に失敗しました: ${res.status} ${res.statusText}`);
+        }
+        const text = await res.text();
+        const items = parseJsonl(text);
+        if (items.length === 0) {
+          serverContainer.innerHTML = '<p class="empty-state">ログはありません。</p>';
+          return;
+        }
+        const sorted = items.slice().sort((a,b)=>new Date(b.timestamp) - new Date(a.timestamp));
+        serverContainer.innerHTML = sorted.map(formatLogEntry).join('');
+      } catch (e) {
+        console.error('loadLocalLogs error', e);
+        serverContainer.innerHTML = `<p class="empty-state">ログ取得に失敗しました。<br>エラー: ${escapeHtml(e.message)}</p>`;
+      }
+    }
+
+    function parseJsonl(text) {
+      return text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
     }
 
     function formatLogEntry(entry){
