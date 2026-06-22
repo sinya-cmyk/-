@@ -1,76 +1,41 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
 
 const PORT = 8000;
-const DB_PATH = path.join(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('SQLite DB を開けませんでした:', err);
-    process.exit(1);
-  }
-});
+const DATA_DIR = path.join(__dirname, 'data');
+const ATTACHMENTS_DIR = path.join(__dirname, 'attachments');
 
-// Ensure existing projects table has 'mode' column (for older DBs)
-db.get("PRAGMA table_info('projects')", (err, row) => {
-  // If single row returned, need to check all columns instead
-});
-db.all("PRAGMA table_info('projects')", (err, rows) => {
-  if (err) return;
-  const hasMode = rows.some((c) => c.name === 'mode');
-  if (!hasMode) {
-    try {
-      db.run("ALTER TABLE projects ADD COLUMN mode TEXT DEFAULT 'private'", (alterErr) => {
-        if (alterErr) console.warn('projects テーブルに mode カラムを追加できませんでした', alterErr);
-        else console.log('projects テーブルに mode カラムを追加しました');
-      });
-    } catch (e) {
-      console.warn('mode カラム追加処理でエラー', e);
-    }
+function ensureDirectory(dir) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-});
+}
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    password TEXT NOT NULL
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
-    mode TEXT NOT NULL,
-    project TEXT NOT NULL
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS tasks (
-    username TEXT NOT NULL,
-    mode TEXT NOT NULL,
-    data TEXT NOT NULL,
-    updatedAt TEXT,
-    PRIMARY KEY(username, mode)
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT,
-    username TEXT,
-    mode TEXT,
-    action TEXT,
-    payload TEXT
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS attachments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    mode TEXT,
-    filename TEXT,
-    filepath TEXT,
-    size INTEGER,
-    type TEXT,
-    date TEXT,
-    project TEXT,
-    taskTitle TEXT,
-    createdAt TEXT
-  )`);
-});
+function readJson(filename, defaultValue) {
+  const filePath = path.join(DATA_DIR, filename);
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    if (!text) return defaultValue;
+    return JSON.parse(text);
+  } catch (err) {
+    if (err.code === 'ENOENT') return defaultValue;
+    console.error(`JSON読み込みエラー: ${filename}`, err);
+    return defaultValue;
+  }
+}
+
+function writeJson(filename, value) {
+  const filePath = path.join(DATA_DIR, filename);
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+}
+
+function getNextId(items) {
+  return items.reduce((max, item) => Math.max(max, item.id || 0), 0) + 1;
+}
+
+ensureDirectory(DATA_DIR);
+ensureDirectory(ATTACHMENTS_DIR);
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -101,45 +66,29 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === 'GET' && urlPath === '/api/users') {
+      const users = readJson('users.json', {});
       const username = query.get('username');
       if (username) {
-        db.get('SELECT username, password FROM users WHERE username = ?', [username], (err, row) => {
-          if (err) return sendJson(res, 500, { error: 'DBエラー' });
-          if (!row) return sendJson(res, 200, { user: null });
-          return sendJson(res, 200, { user: { username: row.username, password: row.password } });
-        });
-        return;
+        const user = users[username] || null;
+        return sendJson(res, 200, { user });
       }
-      db.all('SELECT username, password FROM users', (err, rows) => {
-        if (err) return sendJson(res, 500, { error: 'DBエラー' });
-        const users = {};
-        rows.forEach((row) => { users[row.username] = { password: row.password }; });
-        sendJson(res, 200, { users });
-      });
-      return;
+      return sendJson(res, 200, { users });
     }
 
     if (req.method === 'POST' && urlPath === '/api/users') {
       const body = await parseRequestBody(req);
+      const users = readJson('users.json', {});
       if (body.users && typeof body.users === 'object') {
-        const stmt = db.prepare('INSERT OR REPLACE INTO users(username, password) VALUES (?, ?)');
-        db.serialize(() => {
-          for (const [username, value] of Object.entries(body.users)) {
-            stmt.run(username, value.password || '');
-          }
-          stmt.finalize((err) => {
-            if (err) return sendJson(res, 500, { error: 'DBエラー' });
-            return sendJson(res, 200, { status: 'ok' });
-          });
-        });
-        return;
+        for (const [username, value] of Object.entries(body.users)) {
+          users[username] = { password: value.password || '' };
+        }
+        writeJson('users.json', users);
+        return sendJson(res, 200, { status: 'ok' });
       }
       if (body.username && body.password) {
-        db.run('INSERT OR REPLACE INTO users(username, password) VALUES (?, ?)', [body.username, body.password], (err) => {
-          if (err) return sendJson(res, 500, { error: 'DBエラー' });
-          sendJson(res, 200, { status: 'ok' });
-        });
-        return;
+        users[body.username] = { password: body.password };
+        writeJson('users.json', users);
+        return sendJson(res, 200, { status: 'ok' });
       }
       return sendJson(res, 400, { error: '無効なパラメーター' });
     }
@@ -148,92 +97,78 @@ const server = http.createServer(async (req, res) => {
       const username = query.get('user');
       const mode = query.get('mode');
       if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
-      db.all('SELECT project FROM projects WHERE username = ? AND mode = ? ORDER BY id', [username, mode], (err, rows) => {
-        if (err) return sendJson(res, 500, { error: 'DBエラー' });
-        const projects = rows.map((row) => row.project);
-        sendJson(res, 200, { projects });
-      });
-      return;
+      const projects = readJson('projects.json', []).filter((row) => row.username === username && row.mode === mode);
+      return sendJson(res, 200, { projects: projects.map((row) => row.project) });
     }
 
     if (req.method === 'POST' && urlPath === '/api/projects') {
       const body = await parseRequestBody(req);
       if (!body.user || !body.mode || !Array.isArray(body.projects)) return sendJson(res, 400, { error: '無効なパラメーター' });
-      db.serialize(() => {
-        db.run('DELETE FROM projects WHERE username = ? AND mode = ?', [body.user, body.mode], (err) => {
-          if (err) return sendJson(res, 500, { error: 'DBエラー' });
-          const stmt = db.prepare('INSERT INTO projects(username, mode, project) VALUES (?, ?, ?)');
-          body.projects.forEach((project) => stmt.run(body.user, body.mode, project));
-          stmt.finalize((err2) => {
-            if (err2) return sendJson(res, 500, { error: 'DBエラー' });
-            sendJson(res, 200, { status: 'ok' });
-          });
-        });
-      });
-      return;
+      let projects = readJson('projects.json', []);
+      projects = projects.filter((row) => !(row.username === body.user && row.mode === body.mode));
+      for (const project of body.projects) {
+        projects.push({ username: body.user, mode: body.mode, project });
+      }
+      writeJson('projects.json', projects);
+      return sendJson(res, 200, { status: 'ok' });
     }
 
     if (req.method === 'GET' && urlPath === '/api/tasks') {
       const username = query.get('user');
       const mode = query.get('mode');
       if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
-      db.get('SELECT data FROM tasks WHERE username = ? AND mode = ?', [username, mode], (err, row) => {
-        if (err) return sendJson(res, 500, { error: 'DBエラー' });
-        if (!row) return sendJson(res, 200, { tasks: {} });
-        try {
-          return sendJson(res, 200, { tasks: JSON.parse(row.data) });
-        } catch {
-          return sendJson(res, 200, { tasks: {} });
-        }
-      });
-      return;
+      const tasks = readJson('tasks.json', []);
+      const row = tasks.find((item) => item.username === username && item.mode === mode);
+      return sendJson(res, 200, { tasks: row ? row.data : {} });
     }
 
     if (req.method === 'POST' && urlPath === '/api/tasks') {
       const body = await parseRequestBody(req);
       if (!body.user || !body.mode || typeof body.tasks !== 'object') return sendJson(res, 400, { error: '無効なパラメーター' });
-      const data = JSON.stringify(body.tasks || {});
-      const updatedAt = new Date().toISOString();
-      db.run(
-        'INSERT INTO tasks(username, mode, data, updatedAt) VALUES(?, ?, ?, ?) ON CONFLICT(username, mode) DO UPDATE SET data = excluded.data, updatedAt = excluded.updatedAt',
-        [body.user, body.mode, data, updatedAt],
-        (err) => {
-          if (err) return sendJson(res, 500, { error: 'DBエラー' });
-          sendJson(res, 200, { status: 'ok' });
-        }
-      );
-      return;
+      const tasks = readJson('tasks.json', []);
+      const existingIndex = tasks.findIndex((item) => item.username === body.user && item.mode === body.mode);
+      const entry = { username: body.user, mode: body.mode, data: body.tasks, updatedAt: new Date().toISOString() };
+      if (existingIndex >= 0) {
+        tasks[existingIndex] = entry;
+      } else {
+        tasks.push(entry);
+      }
+      writeJson('tasks.json', tasks);
+      return sendJson(res, 200, { status: 'ok' });
     }
 
     if (req.method === 'POST' && urlPath === '/api/log') {
       const body = await parseRequestBody(req);
-      const payload = JSON.stringify(body.payload || {});
-      db.run(
-        'INSERT INTO logs(timestamp, username, mode, action, payload) VALUES(?, ?, ?, ?, ?)',
-        [body.timestamp || new Date().toISOString(), body.user || '', body.mode || '', body.action || '', payload],
-        (err) => {
-          if (err) {
-            console.error('Failed to write log', err);
-            return sendJson(res, 500, { status: 'error' });
-          }
-          sendJson(res, 200, { status: 'ok' });
-        }
-      );
-      return;
+      const logs = readJson('logs.json', []);
+      logs.push({
+        timestamp: body.timestamp || new Date().toISOString(),
+        username: body.user || '',
+        mode: body.mode || '',
+        action: body.action || '',
+        payload: body.payload || {}
+      });
+      writeJson('logs.json', logs);
+      return sendJson(res, 200, { status: 'ok' });
     }
 
-    // attachments upload via base64 JSON
+    if (req.method === 'GET' && urlPath === '/api/attachments') {
+      const username = query.get('user');
+      const mode = query.get('mode');
+      if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
+      const attachments = readJson('attachments.json', []).filter((row) => row.username === username && row.mode === mode);
+      return sendJson(res, 200, { attachments });
+    }
+
     if (req.method === 'POST' && urlPath === '/api/attachments') {
       const body = await parseRequestBody(req);
       if (!body.user || !body.mode || !Array.isArray(body.files)) return sendJson(res, 400, { error: '無効なパラメーター' });
       const saved = [];
-      const baseDir = path.join(__dirname, 'attachments', `${body.user}_${body.mode}`);
-      if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
-
+      const baseDir = path.join(ATTACHMENTS_DIR, `${body.user}_${body.mode}`);
+      ensureDirectory(baseDir);
+      const attachments = readJson('attachments.json', []);
       for (const file of body.files) {
         try {
           const name = file.name || `file_${Date.now()}`;
-          // ensure unique filename
           let saveName = name;
           let counter = 1;
           while (fs.existsSync(path.join(baseDir, saveName))) {
@@ -247,27 +182,27 @@ const server = http.createServer(async (req, res) => {
           fs.writeFileSync(filePath, buffer);
           const relPath = `/attachments/${body.user}_${body.mode}/${saveName}`;
           const now = new Date().toISOString();
-          db.run(
-            'INSERT INTO attachments(username, mode, filename, filepath, size, type, date, project, taskTitle, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [body.user, body.mode, saveName, relPath, buffer.length, file.type || '', file.date || '', file.project || '', file.taskTitle || '', now]
-          );
+          const id = getNextId(attachments);
+          attachments.push({
+            id,
+            username: body.user,
+            mode: body.mode,
+            filename: saveName,
+            filepath: relPath,
+            size: buffer.length,
+            type: file.type || '',
+            date: file.date || '',
+            project: file.project || '',
+            taskTitle: file.taskTitle || '',
+            createdAt: now
+          });
           saved.push({ name: saveName, url: relPath, size: buffer.length, type: file.type || '' });
         } catch (e) {
           console.error('Failed to save attachment', e);
         }
       }
+      writeJson('attachments.json', attachments);
       return sendJson(res, 200, { status: 'ok', files: saved });
-    }
-
-    if (req.method === 'GET' && urlPath === '/api/attachments') {
-      const username = query.get('user');
-      const mode = query.get('mode');
-      if (!username || !mode) return sendJson(res, 400, { error: 'user と mode が必要です' });
-      db.all('SELECT filename, filepath, size, type, date, project, taskTitle, createdAt FROM attachments WHERE username = ? AND mode = ? ORDER BY id DESC', [username, mode], (err, rows) => {
-        if (err) return sendJson(res, 500, { error: 'DBエラー' });
-        sendJson(res, 200, { attachments: rows || [] });
-      });
-      return;
     }
 
     if (req.method === 'DELETE' && urlPath === '/api/attachments') {
@@ -275,7 +210,7 @@ const server = http.createServer(async (req, res) => {
       const mode = query.get('mode');
       const filename = query.get('filename');
       if (!username || !mode || !filename) return sendJson(res, 400, { error: 'user, mode, filename が必要です' });
-      const filePath = path.join(__dirname, 'attachments', `${username}_${mode}`, filename);
+      const filePath = path.join(ATTACHMENTS_DIR, `${username}_${mode}`, filename);
       if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: 'ファイルが見つかりません' });
       try {
         fs.unlinkSync(filePath);
@@ -283,14 +218,10 @@ const server = http.createServer(async (req, res) => {
         console.error('Failed to delete file', e);
         return sendJson(res, 500, { error: 'ファイル削除エラー' });
       }
-      db.run('DELETE FROM attachments WHERE username = ? AND mode = ? AND filename = ?', [username, mode, filename], (err) => {
-        if (err) {
-          console.error('Failed to delete attachment metadata', err);
-          return sendJson(res, 500, { error: 'DB削除エラー' });
-        }
-        sendJson(res, 200, { status: 'ok' });
-      });
-      return;
+      let attachments = readJson('attachments.json', []);
+      attachments = attachments.filter((row) => !(row.username === username && row.mode === mode && row.filename === filename));
+      writeJson('attachments.json', attachments);
+      return sendJson(res, 200, { status: 'ok' });
     }
 
     if (req.method === 'GET' && urlPath === '/api/download') {
@@ -299,11 +230,11 @@ const server = http.createServer(async (req, res) => {
       const filename = query.get('filename');
       console.log(`Download request: user=${username}, mode=${mode}, filename=${filename}`);
       if (!username || !mode || !filename) return sendJson(res, 400, { error: 'user, mode, filename が必要です' });
-      const filePath = path.join(__dirname, 'attachments', `${username}_${mode}`, filename);
+      const filePath = path.join(ATTACHMENTS_DIR, `${username}_${mode}`, filename);
       console.log(`Checking file at: ${filePath}`);
       console.log(`File exists: ${fs.existsSync(filePath)}`);
       if (!fs.existsSync(filePath)) {
-        console.log(`File not found. Directory contents:`, fs.readdirSync(path.join(__dirname, 'attachments'), { recursive: true }));
+        console.log(`File not found. Directory contents:`, fs.existsSync(path.join(ATTACHMENTS_DIR, `${username}_${mode}`)) ? fs.readdirSync(path.join(ATTACHMENTS_DIR, `${username}_${mode}`)) : []);
         return sendJson(res, 404, { error: 'ファイルが見つかりません' });
       }
       try {
@@ -320,19 +251,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && urlPath === '/api/logs') {
-      db.all('SELECT timestamp, username, mode, action, payload FROM logs ORDER BY id DESC LIMIT 100', (err, rows) => {
-        if (err) {
-          console.error('Logs query error:', err);
-          return sendJson(res, 500, { error: 'DBエラー' });
-        }
-        const items = (rows || []).map((row) => {
-          let payload;
-          try { payload = JSON.parse(row.payload); } catch (_) { payload = { raw: row.payload }; }
-          return { timestamp: row.timestamp, user: row.username, mode: row.mode, action: row.action, payload };
-        });
-        sendJson(res, 200, items);
-      });
-      return;
+      const logs = readJson('logs.json', []);
+      const items = logs.slice(-100).reverse().map((row) => ({
+        timestamp: row.timestamp,
+        user: row.username,
+        mode: row.mode,
+        action: row.action,
+        payload: row.payload
+      }));
+      return sendJson(res, 200, items);
     }
 
     let filePath = req.url === '/' ? '/index.html' : req.url;
